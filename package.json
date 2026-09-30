@@ -1,0 +1,44 @@
+{
+  "name": "homebridge-eg4",
+  "version": "0.1.0-dev.1",
+  "description": "Homebridge plugin for EG4 solar and battery systems using the EG4 Monitor cloud API.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=22.0.0",
+    "homebridge": ">=2.0.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "supports-hap",
+    "eg4",
+    "solar",
+    "battery",
+    "inverter",
+    "gridboss",
+    "homekit"
+  ],
+  "license": "MIT",
+  "private": true,
+  "homepage": "https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4/issues"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "discover": "npm run build && node --env-file=.env dist/scripts/discover.js",
+    "discover:noenv": "npm run build && node dist/scripts/discover.js",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "homebridge": "^2.0.0",
+    "typescript": "^5.9.0"
+  }
+}

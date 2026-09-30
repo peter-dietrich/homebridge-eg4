@@ -1,0 +1,39 @@
+{
+  "pluginAlias": "EG4",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "EG4 cloud integration. v0.1 is discovery-only and does not yet create HomeKit accessories.",
+  "footerDisplay": "Unofficial community plugin. Not affiliated with EG4 Electronics or Luxpower.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "EG4 Energy",
+        "required": true
+      },
+      "username": {
+        "title": "EG4 Monitor Username",
+        "type": "string",
+        "required": true
+      },
+      "password": {
+        "title": "EG4 Monitor Password",
+        "type": "string",
+        "required": true
+      },
+      "baseUrl": {
+        "title": "EG4 Monitor URL",
+        "type": "string",
+        "default": "https://monitor.eg4electronics.com",
+        "required": true
+      },
+      "debugApi": {
+        "title": "API Debug Logging",
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}
