@@ -530,17 +530,35 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 
     this.lastAdvertisedName = name;
 
-    this.stateService.setCharacteristic(
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.Name,
+      name,
+    );
+
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.ConfiguredName,
+      name,
+    );
+
+    const accessoryInformation = this.accessory.getService(
+      this.platform.Service.AccessoryInformation,
+    );
+
+    accessoryInformation?.updateCharacteristic(
       this.platform.Characteristic.Name,
       name,
     );
 
     /*
-     * Keep the accessory's configured display name in step with the primary
-     * service. Apple Home may cache controller-side names, so this is an
-     * experiment rather than a guaranteed UI refresh mechanism.
+     * Keep Homebridge's accessory display name in step with the primary
+     * service as well. Apple Home can cache a controller-side name, so this
+     * is intentionally an experiment rather than a guaranteed UI refresh.
      */
     this.accessory.displayName = name;
+
+    this.platform.log.debug(
+      `[EG4 Solar] Advertised HomeKit name: ${name}`,
+    );
   }
 }
 
