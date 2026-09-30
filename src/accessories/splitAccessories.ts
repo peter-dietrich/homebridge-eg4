@@ -602,7 +602,7 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
       'EG4 Solar',
       'Solar Production',
     );
-
+  }
 
   update(snapshot: EG4SystemSnapshot): void {
     const power =
