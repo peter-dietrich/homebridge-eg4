@@ -20,6 +20,21 @@ const BATTERY_POWER_UUID =
 const BATTERY_VOLTAGE_UUID =
   '6D7C3A03-1F27-4D6C-A04C-9F7AC4A0E401';
 
+const GRID_VOLTAGE_UUID =
+  '6D7C3A04-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const TODAY_SOLAR_UUID =
+  '6D7C3A05-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const TODAY_USAGE_UUID =
+  '6D7C3A06-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const TODAY_CHARGE_UUID =
+  '6D7C3A07-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const TODAY_DISCHARGE_UUID =
+  '6D7C3A08-1F27-4D6C-A04C-9F7AC4A0E401';
+
 interface EG4AccessoryContext {
   plantId?: string;
   plantName?: string;
@@ -88,6 +103,29 @@ function addReadOnlyFloatCharacteristic(
   service.addCharacteristic(characteristic);
 
   return characteristic;
+}
+
+function addNativeStatusCharacteristics(
+  platform: EG4Platform,
+  service: Service,
+): void {
+  service.addOptionalCharacteristic(
+    platform.Characteristic.StatusActive,
+  );
+  service.addOptionalCharacteristic(
+    platform.Characteristic.StatusFault,
+  );
+
+  service
+    .getCharacteristic(platform.Characteristic.StatusActive)
+    .onGet(() => true);
+
+  service
+    .getCharacteristic(platform.Characteristic.StatusFault)
+    .onGet(
+      () =>
+        platform.Characteristic.StatusFault.NO_FAULT,
+    );
 }
 
 function gridVoltage(snapshot: EG4SystemSnapshot): number {
@@ -190,6 +228,7 @@ export interface EG4AccessoryHandler {
 export class EG4GridAccessory implements EG4AccessoryHandler {
   private readonly service: Service;
   private readonly statusService: Service;
+  private readonly voltageCharacteristic: Characteristic;
   private connected = false;
   private lastAdvertisedName = '';
 
@@ -254,6 +293,21 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
                 .CONTACT_NOT_DETECTED) as CharacteristicValue,
       );
 
+    addNativeStatusCharacteristics(
+      platform,
+      this.statusService,
+    );
+
+    this.voltageCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.statusService,
+      'Grid Voltage (V)',
+      GRID_VOLTAGE_UUID,
+      0,
+      300,
+      0.1,
+    );
+
     this.service.addLinkedService(this.statusService);
   }
 
@@ -273,6 +327,18 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
         : this.platform.Characteristic.ContactSensorState
             .CONTACT_NOT_DETECTED,
     );
+
+    this.statusService.updateCharacteristic(
+      this.platform.Characteristic.StatusActive,
+      true,
+    );
+
+    this.statusService.updateCharacteristic(
+      this.platform.Characteristic.StatusFault,
+      this.platform.Characteristic.StatusFault.NO_FAULT,
+    );
+
+    this.voltageCharacteristic.updateValue(voltage);
 
     const name = this.connected
       ? 'EG4 Grid ON'
@@ -302,6 +368,8 @@ export class EG4BatteryAccessory
   private readonly batteryService: Service;
   private readonly powerCharacteristic: Characteristic;
   private readonly voltageCharacteristic: Characteristic;
+  private readonly todayChargeCharacteristic: Characteristic;
+  private readonly todayDischargeCharacteristic: Characteristic;
 
   private soc = 0;
   private charging = false;
@@ -411,6 +479,31 @@ export class EG4BatteryAccessory
       0.1,
     );
 
+    this.todayChargeCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.batteryService,
+      'Today Charged (kWh)',
+      TODAY_CHARGE_UUID,
+      0,
+      100000,
+      0.001,
+    );
+
+    this.todayDischargeCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.batteryService,
+      'Today Discharged (kWh)',
+      TODAY_DISCHARGE_UUID,
+      0,
+      100000,
+      0.001,
+    );
+
+    addNativeStatusCharacteristics(
+      platform,
+      this.batteryService,
+    );
+
     this.chargeStateService.addLinkedService(
       this.batteryService,
     );
@@ -460,6 +553,26 @@ export class EG4BatteryAccessory
 
     this.powerCharacteristic.updateValue(batteryPower);
     this.voltageCharacteristic.updateValue(voltage);
+
+    const todayCharged = numberFromText(
+      snapshot.energy?.todayChargingText,
+    );
+    const todayDischarged = numberFromText(
+      snapshot.energy?.todayDischargingText,
+    );
+
+    this.todayChargeCharacteristic.updateValue(todayCharged);
+    this.todayDischargeCharacteristic.updateValue(todayDischarged);
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.StatusActive,
+      true,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.StatusFault,
+      this.platform.Characteristic.StatusFault.NO_FAULT,
+    );
 
     const name = `EG4 Battery ${this.soc}%`;
 
@@ -517,6 +630,11 @@ abstract class EG4PowerAccessory
       );
 
     this.stateService.setPrimaryService(true);
+
+    addNativeStatusCharacteristics(
+      platform,
+      this.stateService,
+    );
 
     this.stateService
       .getCharacteristic(platform.Characteristic.On)
@@ -577,6 +695,16 @@ abstract class EG4PowerAccessory
       this.active,
     );
 
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.StatusActive,
+      true,
+    );
+
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.StatusFault,
+      this.platform.Characteristic.StatusFault.NO_FAULT,
+    );
+
     this.powerCharacteristic.updateValue(
       Math.max(0, power),
     );
@@ -590,6 +718,7 @@ abstract class EG4PowerAccessory
 }
 
 export class EG4SolarAccessory extends EG4PowerAccessory {
+  private readonly todayEnergyCharacteristic: Characteristic;
   private lastAdvertisedName = '';
 
   constructor(
@@ -602,6 +731,16 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
       'EG4 Solar',
       'Solar Production',
     );
+
+    this.todayEnergyCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.stateService,
+      'Today Solar (kWh)',
+      TODAY_SOLAR_UUID,
+      0,
+      100000,
+      0.001,
+    );
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -613,8 +752,12 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
     const totalEnergy = numberFromText(
       snapshot.energy?.totalYieldingText,
     );
+    const todayEnergy = numberFromText(
+      snapshot.energy?.todayYieldingText,
+    );
 
     this.updateValues(power, totalEnergy);
+    this.todayEnergyCharacteristic.updateValue(todayEnergy);
     this.updateDynamicName(power);
 
     this.platform.log.info(
@@ -650,6 +793,7 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 }
 
 export class EG4LoadAccessory extends EG4PowerAccessory {
+  private readonly todayUsageCharacteristic: Characteristic;
   private lastAdvertisedName = '';
 
   constructor(
@@ -662,6 +806,16 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
       'EG4 House Load',
       'House Load',
     );
+
+    this.todayUsageCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.stateService,
+      'Today Usage (kWh)',
+      TODAY_USAGE_UUID,
+      0,
+      100000,
+      0.001,
+    );
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -670,8 +824,12 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     const totalEnergy = numberFromText(
       snapshot.energy?.totalUsageText,
     );
+    const todayUsage = numberFromText(
+      snapshot.energy?.todayUsageText,
+    );
 
     this.updateValues(power, totalEnergy);
+    this.todayUsageCharacteristic.updateValue(todayUsage);
 
     const name = powerDisplayName(
       'EG4 Load',
