@@ -448,6 +448,8 @@ abstract class EG4PowerAccessory
 }
 
 export class EG4SolarAccessory extends EG4PowerAccessory {
+  private lastAdvertisedName = '';
+
   constructor(
     platform: EG4Platform,
     accessory: PlatformAccessory,
@@ -458,6 +460,41 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
       'EG4 Solar',
       'Solar Production',
     );
+
+    /*
+     * Solar-only UI experiment:
+     *
+     * Apple Home tends to render a full room tile only for a genuinely
+     * writable control service. We therefore advertise the Solar switch as
+     * writable to HomeKit, but intercept every write locally. No EG4 write
+     * endpoint is called from this handler.
+     */
+    this.stateService
+      .getCharacteristic(platform.Characteristic.On)
+      .setProps({
+        perms: [
+          platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.PAIRED_WRITE,
+          platform.api.hap.Perms.NOTIFY,
+        ],
+      })
+      .onSet((requestedValue) => {
+        const requested = Boolean(requestedValue);
+
+        this.platform.log.warn(
+          `[EG4 Solar] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
+            'ignored because EG4 Solar is status-only.',
+        );
+
+        // Let HomeKit complete the write transaction, then restore the real
+        // solar state. This never calls an EG4 control endpoint.
+        setTimeout(() => {
+          this.stateService.updateCharacteristic(
+            this.platform.Characteristic.On,
+            this.active,
+          );
+        }, 150);
+      });
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -471,11 +508,39 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
     );
 
     this.updateValues(power, totalEnergy);
+    this.updateDynamicName(power);
 
     this.platform.log.info(
       `[EG4 Solar] Power=${power}W ` +
         `Total=${totalEnergy.toFixed(1)}kWh`,
     );
+  }
+
+  private updateDynamicName(power: number): void {
+    const name =
+      power <= 50
+        ? 'EG4 Solar OFF'
+        : power >= 1000
+          ? `EG4 Solar ${(power / 1000).toFixed(1)} kW`
+          : `EG4 Solar ${Math.round(power)} W`;
+
+    if (name === this.lastAdvertisedName) {
+      return;
+    }
+
+    this.lastAdvertisedName = name;
+
+    this.stateService.setCharacteristic(
+      this.platform.Characteristic.Name,
+      name,
+    );
+
+    /*
+     * Keep the accessory's configured display name in step with the primary
+     * service. Apple Home may cache controller-side names, so this is an
+     * experiment rather than a guaranteed UI refresh mechanism.
+     */
+    this.accessory.displayName = name;
   }
 }
 
