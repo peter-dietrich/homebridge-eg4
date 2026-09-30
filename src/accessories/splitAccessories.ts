@@ -141,26 +141,63 @@ function numberFromText(value: unknown): number {
   return 0;
 }
 
+function advertiseDynamicName(
+  platform: EG4Platform,
+  accessory: PlatformAccessory,
+  service: Service,
+  name: string,
+): void {
+  service.updateCharacteristic(
+    platform.Characteristic.Name,
+    name,
+  );
+
+  service.updateCharacteristic(
+    platform.Characteristic.ConfiguredName,
+    name,
+  );
+
+  accessory
+    .getService(platform.Service.AccessoryInformation)
+    ?.updateCharacteristic(
+      platform.Characteristic.Name,
+      name,
+    );
+
+  accessory.displayName = name;
+}
+
+function powerDisplayName(
+  prefix: string,
+  power: number,
+  offBelowThreshold = false,
+): string {
+  if (offBelowThreshold && power <= 50) {
+    return `${prefix} OFF`;
+  }
+
+  if (power >= 1000) {
+    return `${prefix} ${(power / 1000).toFixed(1)} kW`;
+  }
+
+  return `${prefix} ${Math.round(Math.max(0, power))} W`;
+}
+
 export interface EG4AccessoryHandler {
   update(snapshot: EG4SystemSnapshot): void;
 }
 
 export class EG4GridAccessory implements EG4AccessoryHandler {
   private readonly service: Service;
+  private readonly statusService: Service;
   private connected = false;
+  private lastAdvertisedName = '';
 
   constructor(
     private readonly platform: EG4Platform,
     private readonly accessory: PlatformAccessory,
   ) {
     setAccessoryInformation(platform, accessory, 'EG4 Grid');
-
-    const legacyService =
-      accessory.getService(platform.Service.ContactSensor);
-
-    if (legacyService) {
-      accessory.removeService(legacyService);
-    }
 
     this.service =
       accessory.getService(platform.Service.Switch) ??
@@ -176,10 +213,48 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
       .setProps({
         perms: [
           platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.PAIRED_WRITE,
           platform.api.hap.Perms.NOTIFY,
         ],
       })
-      .onGet(() => this.connected as CharacteristicValue);
+      .onGet(() => this.connected as CharacteristicValue)
+      .onSet((requestedValue) => {
+        const requested = Boolean(requestedValue);
+
+        this.platform.log.warn(
+          `[EG4 Grid] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
+            'ignored because EG4 Grid is status-only.',
+        );
+
+        setTimeout(() => {
+          this.service.updateCharacteristic(
+            this.platform.Characteristic.On,
+            this.connected,
+          );
+        }, 150);
+      });
+
+    this.statusService =
+      accessory.getService('Grid Status') ??
+      accessory.addService(
+        platform.Service.ContactSensor,
+        'Grid Status',
+        'grid-status',
+      );
+
+    this.statusService
+      .getCharacteristic(
+        platform.Characteristic.ContactSensorState,
+      )
+      .onGet(
+        () =>
+          (this.connected
+            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+            : platform.Characteristic.ContactSensorState
+                .CONTACT_NOT_DETECTED) as CharacteristicValue,
+      );
+
+    this.service.addLinkedService(this.statusService);
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -190,6 +265,28 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
       this.platform.Characteristic.On,
       this.connected,
     );
+
+    this.statusService.updateCharacteristic(
+      this.platform.Characteristic.ContactSensorState,
+      this.connected
+        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+        : this.platform.Characteristic.ContactSensorState
+            .CONTACT_NOT_DETECTED,
+    );
+
+    const name = this.connected
+      ? 'EG4 Grid ON'
+      : 'EG4 Grid OFF-GRID';
+
+    if (name !== this.lastAdvertisedName) {
+      this.lastAdvertisedName = name;
+      advertiseDynamicName(
+        this.platform,
+        this.accessory,
+        this.service,
+        name,
+      );
+    }
 
     this.platform.log.info(
       `[EG4 Grid] ${this.connected ? 'Connected' : 'Off-grid'} ` +
@@ -208,6 +305,7 @@ export class EG4BatteryAccessory
 
   private soc = 0;
   private charging = false;
+  private lastAdvertisedName = '';
 
   constructor(
     private readonly platform: EG4Platform,
@@ -240,10 +338,26 @@ export class EG4BatteryAccessory
       .setProps({
         perms: [
           platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.PAIRED_WRITE,
           platform.api.hap.Perms.NOTIFY,
         ],
       })
-      .onGet(() => this.charging as CharacteristicValue);
+      .onGet(() => this.charging as CharacteristicValue)
+      .onSet((requestedValue) => {
+        const requested = Boolean(requestedValue);
+
+        this.platform.log.warn(
+          `[EG4 Battery] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
+            'ignored because EG4 Battery is status-only.',
+        );
+
+        setTimeout(() => {
+          this.chargeStateService.updateCharacteristic(
+            this.platform.Characteristic.On,
+            this.charging,
+          );
+        }, 150);
+      });
 
     this.batteryService =
       accessory.getService(platform.Service.Battery) ??
@@ -347,6 +461,18 @@ export class EG4BatteryAccessory
     this.powerCharacteristic.updateValue(batteryPower);
     this.voltageCharacteristic.updateValue(voltage);
 
+    const name = `EG4 Battery ${this.soc}%`;
+
+    if (name !== this.lastAdvertisedName) {
+      this.lastAdvertisedName = name;
+      advertiseDynamicName(
+        this.platform,
+        this.accessory,
+        this.chargeStateService,
+        name,
+      );
+    }
+
     this.platform.log.info(
       `[EG4 Battery] SOC=${this.soc}% ` +
         `Charging=${this.charging ? 'Yes' : 'No'} ` +
@@ -397,10 +523,26 @@ abstract class EG4PowerAccessory
       .setProps({
         perms: [
           platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.PAIRED_WRITE,
           platform.api.hap.Perms.NOTIFY,
         ],
       })
-      .onGet(() => this.active as CharacteristicValue);
+      .onGet(() => this.active as CharacteristicValue)
+      .onSet((requestedValue) => {
+        const requested = Boolean(requestedValue);
+
+        this.platform.log.warn(
+          `[${model}] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
+            `ignored because ${model} is status-only.`,
+        );
+
+        setTimeout(() => {
+          this.stateService.updateCharacteristic(
+            this.platform.Characteristic.On,
+            this.active,
+          );
+        }, 150);
+      });
 
     this.powerCharacteristic = addReadOnlyFloatCharacteristic(
       platform,
@@ -461,41 +603,6 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
       'Solar Production',
     );
 
-    /*
-     * Solar-only UI experiment:
-     *
-     * Apple Home tends to render a full room tile only for a genuinely
-     * writable control service. We therefore advertise the Solar switch as
-     * writable to HomeKit, but intercept every write locally. No EG4 write
-     * endpoint is called from this handler.
-     */
-    this.stateService
-      .getCharacteristic(platform.Characteristic.On)
-      .setProps({
-        perms: [
-          platform.api.hap.Perms.PAIRED_READ,
-          platform.api.hap.Perms.PAIRED_WRITE,
-          platform.api.hap.Perms.NOTIFY,
-        ],
-      })
-      .onSet((requestedValue) => {
-        const requested = Boolean(requestedValue);
-
-        this.platform.log.warn(
-          `[EG4 Solar] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
-            'ignored because EG4 Solar is status-only.',
-        );
-
-        // Let HomeKit complete the write transaction, then restore the real
-        // solar state. This never calls an EG4 control endpoint.
-        setTimeout(() => {
-          this.stateService.updateCharacteristic(
-            this.platform.Characteristic.On,
-            this.active,
-          );
-        }, 150);
-      });
-  }
 
   update(snapshot: EG4SystemSnapshot): void {
     const power =
@@ -517,12 +624,11 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
   }
 
   private updateDynamicName(power: number): void {
-    const name =
-      power <= 50
-        ? 'EG4 Solar OFF'
-        : power >= 1000
-          ? `EG4 Solar ${(power / 1000).toFixed(1)} kW`
-          : `EG4 Solar ${Math.round(power)} W`;
+    const name = powerDisplayName(
+      'EG4 Solar',
+      power,
+      true,
+    );
 
     if (name === this.lastAdvertisedName) {
       return;
@@ -530,31 +636,12 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 
     this.lastAdvertisedName = name;
 
-    this.stateService.updateCharacteristic(
-      this.platform.Characteristic.Name,
+    advertiseDynamicName(
+      this.platform,
+      this.accessory,
+      this.stateService,
       name,
     );
-
-    this.stateService.updateCharacteristic(
-      this.platform.Characteristic.ConfiguredName,
-      name,
-    );
-
-    const accessoryInformation = this.accessory.getService(
-      this.platform.Service.AccessoryInformation,
-    );
-
-    accessoryInformation?.updateCharacteristic(
-      this.platform.Characteristic.Name,
-      name,
-    );
-
-    /*
-     * Keep Homebridge's accessory display name in step with the primary
-     * service as well. Apple Home can cache a controller-side name, so this
-     * is intentionally an experiment rather than a guaranteed UI refresh.
-     */
-    this.accessory.displayName = name;
 
     this.platform.log.debug(
       `[EG4 Solar] Advertised HomeKit name: ${name}`,
@@ -563,6 +650,8 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 }
 
 export class EG4LoadAccessory extends EG4PowerAccessory {
+  private lastAdvertisedName = '';
+
   constructor(
     platform: EG4Platform,
     accessory: PlatformAccessory,
@@ -583,6 +672,21 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     );
 
     this.updateValues(power, totalEnergy);
+
+    const name = powerDisplayName(
+      'EG4 Load',
+      power,
+    );
+
+    if (name !== this.lastAdvertisedName) {
+      this.lastAdvertisedName = name;
+      advertiseDynamicName(
+        this.platform,
+        this.accessory,
+        this.stateService,
+        name,
+      );
+    }
 
     this.platform.log.info(
       `[EG4 House Load] Power=${power}W ` +
