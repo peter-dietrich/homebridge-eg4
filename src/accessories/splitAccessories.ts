@@ -155,26 +155,31 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
   ) {
     setAccessoryInformation(platform, accessory, 'EG4 Grid');
 
+    const legacyService =
+      accessory.getService(platform.Service.ContactSensor);
+
+    if (legacyService) {
+      accessory.removeService(legacyService);
+    }
+
     this.service =
-      accessory.getService(platform.Service.ContactSensor) ??
+      accessory.getService(platform.Service.Switch) ??
       accessory.addService(
-        platform.Service.ContactSensor,
+        platform.Service.Switch,
         'Grid Connection',
       );
 
     this.service.setPrimaryService(true);
 
     this.service
-      .getCharacteristic(
-        platform.Characteristic.ContactSensorState,
-      )
-      .onGet(
-        () =>
-          (this.connected
-            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-            : platform.Characteristic.ContactSensorState
-                .CONTACT_NOT_DETECTED) as CharacteristicValue,
-      );
+      .getCharacteristic(platform.Characteristic.On)
+      .setProps({
+        perms: [
+          platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.NOTIFY,
+        ],
+      })
+      .onGet(() => this.connected as CharacteristicValue);
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -182,11 +187,8 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
     this.connected = voltage >= 180;
 
     this.service.updateCharacteristic(
-      this.platform.Characteristic.ContactSensorState,
-      this.connected
-        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-        : this.platform.Characteristic.ContactSensorState
-            .CONTACT_NOT_DETECTED,
+      this.platform.Characteristic.On,
+      this.connected,
     );
 
     this.platform.log.info(
@@ -213,10 +215,20 @@ export class EG4BatteryAccessory
   ) {
     setAccessoryInformation(platform, accessory, 'EG4 Battery');
 
+    const existingChargeService =
+      accessory.getService('Battery Charging');
+
+    if (
+      existingChargeService &&
+      existingChargeService.UUID !== platform.Service.Switch.UUID
+    ) {
+      accessory.removeService(existingChargeService);
+    }
+
     this.chargeStateService =
       accessory.getService('Battery Charging') ??
       accessory.addService(
-        platform.Service.ContactSensor,
+        platform.Service.Switch,
         'Battery Charging',
         'battery-charging',
       );
@@ -224,16 +236,14 @@ export class EG4BatteryAccessory
     this.chargeStateService.setPrimaryService(true);
 
     this.chargeStateService
-      .getCharacteristic(
-        platform.Characteristic.ContactSensorState,
-      )
-      .onGet(
-        () =>
-          (this.charging
-            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-            : platform.Characteristic.ContactSensorState
-                .CONTACT_NOT_DETECTED) as CharacteristicValue,
-      );
+      .getCharacteristic(platform.Characteristic.On)
+      .setProps({
+        perms: [
+          platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.NOTIFY,
+        ],
+      })
+      .onGet(() => this.charging as CharacteristicValue);
 
     this.batteryService =
       accessory.getService(platform.Service.Battery) ??
@@ -310,11 +320,8 @@ export class EG4BatteryAccessory
         : 0;
 
     this.chargeStateService.updateCharacteristic(
-      this.platform.Characteristic.ContactSensorState,
-      this.charging
-        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-        : this.platform.Characteristic.ContactSensorState
-            .CONTACT_NOT_DETECTED,
+      this.platform.Characteristic.On,
+      this.charging,
     );
 
     this.batteryService.updateCharacteristic(
@@ -365,10 +372,20 @@ abstract class EG4PowerAccessory
   ) {
     setAccessoryInformation(platform, accessory, model);
 
+    const existingStateService =
+      accessory.getService(serviceName);
+
+    if (
+      existingStateService &&
+      existingStateService.UUID !== platform.Service.Switch.UUID
+    ) {
+      accessory.removeService(existingStateService);
+    }
+
     this.stateService =
       accessory.getService(serviceName) ??
       accessory.addService(
-        platform.Service.ContactSensor,
+        platform.Service.Switch,
         serviceName,
         serviceName.toLowerCase().replace(/\s+/g, '-'),
       );
@@ -376,16 +393,14 @@ abstract class EG4PowerAccessory
     this.stateService.setPrimaryService(true);
 
     this.stateService
-      .getCharacteristic(
-        platform.Characteristic.ContactSensorState,
-      )
-      .onGet(
-        () =>
-          (this.active
-            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-            : platform.Characteristic.ContactSensorState
-                .CONTACT_NOT_DETECTED) as CharacteristicValue,
-      );
+      .getCharacteristic(platform.Characteristic.On)
+      .setProps({
+        perms: [
+          platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.NOTIFY,
+        ],
+      })
+      .onGet(() => this.active as CharacteristicValue);
 
     this.powerCharacteristic = addReadOnlyFloatCharacteristic(
       platform,
@@ -416,11 +431,8 @@ abstract class EG4PowerAccessory
     this.active = power > 50;
 
     this.stateService.updateCharacteristic(
-      this.platform.Characteristic.ContactSensorState,
-      this.active
-        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-        : this.platform.Characteristic.ContactSensorState
-            .CONTACT_NOT_DETECTED,
+      this.platform.Characteristic.On,
+      this.active,
     );
 
     this.powerCharacteristic.updateValue(
