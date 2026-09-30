@@ -1,0 +1,6 @@
+src/
+test/
+.env
+.env.*
+*.log
+eg4-discovery*.json
