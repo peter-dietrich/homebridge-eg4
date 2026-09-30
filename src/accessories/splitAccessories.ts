@@ -35,6 +35,12 @@ const TODAY_CHARGE_UUID =
 const TODAY_DISCHARGE_UUID =
   '6D7C3A08-1F27-4D6C-A04C-9F7AC4A0E401';
 
+const GENERATOR_VOLTAGE_UUID =
+  '6D7C3A09-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const GENERATOR_FREQUENCY_UUID =
+  '6D7C3A0A-1F27-4D6C-A04C-9F7AC4A0E401';
+
 interface EG4AccessoryContext {
   plantId?: string;
   plantName?: string;
@@ -205,20 +211,95 @@ function advertiseDynamicName(
   accessory.displayName = name;
 }
 
+function compactPower(power: number): string {
+  const value = Math.max(0, Math.abs(power));
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)} kW`;
+  }
+
+  return `${Math.round(value)} W`;
+}
+
 function powerDisplayName(
   prefix: string,
   power: number,
   offBelowThreshold = false,
 ): string {
-  if (offBelowThreshold && power <= 50) {
+  if (offBelowThreshold && Math.abs(power) <= 50) {
     return `${prefix} OFF`;
   }
 
-  if (power >= 1000) {
-    return `${prefix} ${(power / 1000).toFixed(1)} kW`;
+  return `${prefix} ${compactPower(power)}`;
+}
+
+function batteryFlows(
+  snapshot: EG4SystemSnapshot,
+): { charge: number; discharge: number } {
+  const devices = snapshot.parallel?.devices ?? [];
+
+  const charge = devices.reduce(
+    (sum, device) =>
+      sum +
+      (typeof device.pCharge === 'number'
+        ? Math.max(0, device.pCharge)
+        : 0),
+    0,
+  );
+
+  const discharge = devices.reduce(
+    (sum, device) =>
+      sum +
+      (typeof device.pDisCharge === 'number'
+        ? Math.max(0, device.pDisCharge)
+        : 0),
+    0,
+  );
+
+  if (charge > 0 || discharge > 0) {
+    return { charge, discharge };
   }
 
-  return `${prefix} ${Math.round(Math.max(0, power))} W`;
+  const aggregate =
+    typeof snapshot.midbox?.deviceData?.batPower === 'number'
+      ? snapshot.midbox.deviceData.batPower
+      : 0;
+
+  return {
+    charge: aggregate > 0 ? aggregate : 0,
+    discharge: aggregate < 0 ? Math.abs(aggregate) : 0,
+  };
+}
+
+function generatorVoltage(snapshot: EG4SystemSnapshot): number {
+  const raw = snapshot.midbox?.midboxData?.genRmsVolt;
+  return typeof raw === 'number' ? raw / 10 : 0;
+}
+
+function generatorFrequency(snapshot: EG4SystemSnapshot): number {
+  const raw = snapshot.midbox?.midboxData?.genFreq;
+
+  if (typeof raw !== 'number') {
+    return 0;
+  }
+
+  return raw > 100 ? raw / 100 : raw;
+}
+
+function generatorPower(snapshot: EG4SystemSnapshot): number {
+  const data = snapshot.midbox?.midboxData;
+
+  const l1 =
+    typeof data?.genL1ActivePower === 'number'
+      ? data.genL1ActivePower
+      : 0;
+
+  const l2 =
+    typeof data?.genL2ActivePower === 'number'
+      ? data.genL2ActivePower
+      : 0;
+
+  return Math.abs(l1) + Math.abs(l2);
 }
 
 export interface EG4AccessoryHandler {
@@ -238,10 +319,17 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
   ) {
     setAccessoryInformation(platform, accessory, 'EG4 Grid');
 
+    const legacySwitch =
+      accessory.getService(platform.Service.Switch);
+
+    if (legacySwitch) {
+      accessory.removeService(legacySwitch);
+    }
+
     this.service =
-      accessory.getService(platform.Service.Switch) ??
+      accessory.getService(platform.Service.Outlet) ??
       accessory.addService(
-        platform.Service.Switch,
+        platform.Service.Outlet,
         'Grid Connection',
       );
 
@@ -272,6 +360,10 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
           );
         }, 150);
       });
+
+    this.service
+      .getCharacteristic(platform.Characteristic.OutletInUse)
+      .onGet(() => this.connected as CharacteristicValue);
 
     this.statusService =
       accessory.getService('Grid Status') ??
@@ -320,6 +412,11 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
       this.connected,
     );
 
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.OutletInUse,
+      this.connected,
+    );
+
     this.statusService.updateCharacteristic(
       this.platform.Characteristic.ContactSensorState,
       this.connected
@@ -340,8 +437,13 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
 
     this.voltageCharacteristic.updateValue(voltage);
 
+    const gridPower =
+      typeof snapshot.midbox?.deviceData?.gridPower === 'number'
+        ? snapshot.midbox.deviceData.gridPower
+        : 0;
+
     const name = this.connected
-      ? 'EG4 Grid ON'
+      ? `EG4 Grid ${compactPower(gridPower)}`
       : 'EG4 Grid OFF-GRID';
 
     if (name !== this.lastAdvertisedName) {
@@ -384,17 +486,22 @@ export class EG4BatteryAccessory
     const existingChargeService =
       accessory.getService('Battery Charging');
 
-    if (
+    const legacyBatterySwitch =
+      accessory.getService(platform.Service.Switch);
+
+    if (legacyBatterySwitch) {
+      accessory.removeService(legacyBatterySwitch);
+    } else if (
       existingChargeService &&
-      existingChargeService.UUID !== platform.Service.Switch.UUID
+      existingChargeService.UUID !== platform.Service.Outlet.UUID
     ) {
       accessory.removeService(existingChargeService);
     }
 
     this.chargeStateService =
-      accessory.getService('Battery Charging') ??
+      accessory.getService(platform.Service.Outlet) ??
       accessory.addService(
-        platform.Service.Switch,
+        platform.Service.Outlet,
         'Battery Charging',
         'battery-charging',
       );
@@ -426,6 +533,13 @@ export class EG4BatteryAccessory
           );
         }, 150);
       });
+
+    this.chargeStateService
+      .getCharacteristic(platform.Characteristic.OutletInUse)
+      .onGet(
+        () =>
+          (this.charging as CharacteristicValue),
+      );
 
     this.batteryService =
       accessory.getService(platform.Service.Battery) ??
@@ -519,7 +633,10 @@ export class EG4BatteryAccessory
         ? system.batPower
         : 0;
 
-    this.charging = batteryPower > 50;
+    const flows = batteryFlows(snapshot);
+    this.charging = flows.charge > 50;
+    const discharging = flows.discharge > 50;
+    const batteryActive = this.charging || discharging;
 
     const voltage =
       typeof system?.vBat === 'number'
@@ -528,7 +645,12 @@ export class EG4BatteryAccessory
 
     this.chargeStateService.updateCharacteristic(
       this.platform.Characteristic.On,
-      this.charging,
+      batteryActive,
+    );
+
+    this.chargeStateService.updateCharacteristic(
+      this.platform.Characteristic.OutletInUse,
+      batteryActive,
     );
 
     this.batteryService.updateCharacteristic(
@@ -574,7 +696,11 @@ export class EG4BatteryAccessory
       this.platform.Characteristic.StatusFault.NO_FAULT,
     );
 
-    const name = `EG4 Battery ${this.soc}%`;
+    const name = this.charging
+      ? `EG4 Battery ${this.soc}% CHG ${compactPower(flows.charge)}`
+      : discharging
+        ? `EG4 Battery ${this.soc}% DIS ${compactPower(flows.discharge)}`
+        : `EG4 Battery ${this.soc}% IDLE`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -614,17 +740,22 @@ abstract class EG4PowerAccessory
     const existingStateService =
       accessory.getService(serviceName);
 
-    if (
+    const legacySwitch =
+      accessory.getService(platform.Service.Switch);
+
+    if (legacySwitch) {
+      accessory.removeService(legacySwitch);
+    } else if (
       existingStateService &&
-      existingStateService.UUID !== platform.Service.Switch.UUID
+      existingStateService.UUID !== platform.Service.Outlet.UUID
     ) {
       accessory.removeService(existingStateService);
     }
 
     this.stateService =
-      accessory.getService(serviceName) ??
+      accessory.getService(platform.Service.Outlet) ??
       accessory.addService(
-        platform.Service.Switch,
+        platform.Service.Outlet,
         serviceName,
         serviceName.toLowerCase().replace(/\s+/g, '-'),
       );
@@ -662,6 +793,10 @@ abstract class EG4PowerAccessory
         }, 150);
       });
 
+    this.stateService
+      .getCharacteristic(platform.Characteristic.OutletInUse)
+      .onGet(() => this.active as CharacteristicValue);
+
     this.powerCharacteristic = addReadOnlyFloatCharacteristic(
       platform,
       this.stateService,
@@ -692,6 +827,11 @@ abstract class EG4PowerAccessory
 
     this.stateService.updateCharacteristic(
       this.platform.Characteristic.On,
+      this.active,
+    );
+
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.OutletInUse,
       this.active,
     );
 
@@ -849,6 +989,166 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     this.platform.log.info(
       `[EG4 House Load] Power=${power}W ` +
         `Total=${totalEnergy.toFixed(1)}kWh`,
+    );
+  }
+}
+
+
+export class EG4GeneratorAccessory
+  implements EG4AccessoryHandler
+{
+  private readonly service: Service;
+  private readonly powerCharacteristic: Characteristic;
+  private readonly voltageCharacteristic: Characteristic;
+  private readonly frequencyCharacteristic: Characteristic;
+
+  private active = false;
+  private lastAdvertisedName = '';
+
+  constructor(
+    private readonly platform: EG4Platform,
+    private readonly accessory: PlatformAccessory,
+  ) {
+    setAccessoryInformation(
+      platform,
+      accessory,
+      'EG4 Generator',
+    );
+
+    const legacySwitch =
+      accessory.getService(platform.Service.Switch);
+
+    if (legacySwitch) {
+      accessory.removeService(legacySwitch);
+    }
+
+    this.service =
+      accessory.getService(platform.Service.Outlet) ??
+      accessory.addService(
+        platform.Service.Outlet,
+        'Generator',
+        'generator',
+      );
+
+    this.service.setPrimaryService(true);
+
+    addNativeStatusCharacteristics(
+      platform,
+      this.service,
+    );
+
+    this.service
+      .getCharacteristic(platform.Characteristic.On)
+      .setProps({
+        perms: [
+          platform.api.hap.Perms.PAIRED_READ,
+          platform.api.hap.Perms.PAIRED_WRITE,
+          platform.api.hap.Perms.NOTIFY,
+        ],
+      })
+      .onGet(() => this.active as CharacteristicValue)
+      .onSet((requestedValue) => {
+        const requested = Boolean(requestedValue);
+
+        this.platform.log.warn(
+          `[EG4 Generator] HomeKit requested ${requested ? 'ON' : 'OFF'}; ` +
+            'ignored because EG4 Generator is status-only.',
+        );
+
+        setTimeout(() => {
+          this.service.updateCharacteristic(
+            this.platform.Characteristic.On,
+            this.active,
+          );
+        }, 150);
+      });
+
+    this.service
+      .getCharacteristic(platform.Characteristic.OutletInUse)
+      .onGet(() => this.active as CharacteristicValue);
+
+    this.powerCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.service,
+      'Generator Power (W)',
+      EVE_CURRENT_CONSUMPTION_UUID,
+      0,
+      100000,
+      1,
+    );
+
+    this.voltageCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.service,
+      'Generator Voltage (V)',
+      GENERATOR_VOLTAGE_UUID,
+      0,
+      300,
+      0.1,
+    );
+
+    this.frequencyCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.service,
+      'Generator Frequency (Hz)',
+      GENERATOR_FREQUENCY_UUID,
+      0,
+      100,
+      0.01,
+    );
+  }
+
+  update(snapshot: EG4SystemSnapshot): void {
+    const voltage = generatorVoltage(snapshot);
+    const frequency = generatorFrequency(snapshot);
+    const power = generatorPower(snapshot);
+
+    this.active = voltage >= 180 || power > 50;
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.On,
+      this.active,
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.OutletInUse,
+      this.active,
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.StatusActive,
+      true,
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.StatusFault,
+      this.platform.Characteristic.StatusFault.NO_FAULT,
+    );
+
+    this.powerCharacteristic.updateValue(power);
+    this.voltageCharacteristic.updateValue(voltage);
+    this.frequencyCharacteristic.updateValue(frequency);
+
+    const name = this.active
+      ? power > 50
+        ? `EG4 Generator ${compactPower(power)}`
+        : 'EG4 Generator ON'
+      : 'EG4 Generator OFF';
+
+    if (name !== this.lastAdvertisedName) {
+      this.lastAdvertisedName = name;
+      advertiseDynamicName(
+        this.platform,
+        this.accessory,
+        this.service,
+        name,
+      );
+    }
+
+    this.platform.log.info(
+      `[EG4 Generator] ${this.active ? 'Active' : 'Off'} ` +
+        `Power=${power}W Voltage=${voltage.toFixed(1)}V ` +
+        `Frequency=${frequency.toFixed(2)}Hz`,
     );
   }
 }
