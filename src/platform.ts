@@ -86,7 +86,7 @@ export class EG4Platform implements DynamicPlatformPlugin {
     this.Characteristic = this.api.hap.Characteristic;
 
     this.log.info(
-      'Initializing EG4 platform v0.3.2-dev.',
+      'Initializing EG4 platform v0.3.3-dev.',
     );
 
     this.api.on('didFinishLaunching', () => {
