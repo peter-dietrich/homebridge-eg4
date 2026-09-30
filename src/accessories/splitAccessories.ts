@@ -1,0 +1,497 @@
+import type {
+  Characteristic,
+  CharacteristicValue,
+  PlatformAccessory,
+  Service,
+} from 'homebridge';
+
+import type { EG4Platform } from '../platform.js';
+import type { EG4SystemSnapshot } from '../eg4/types.js';
+
+const EVE_CURRENT_CONSUMPTION_UUID =
+  'E863F10D-079E-48FF-8F27-9C2605A29F52';
+
+const EVE_TOTAL_CONSUMPTION_UUID =
+  'E863F10C-079E-48FF-8F27-9C2605A29F52';
+
+const BATTERY_POWER_UUID =
+  '6D7C3A02-1F27-4D6C-A04C-9F7AC4A0E401';
+
+const BATTERY_VOLTAGE_UUID =
+  '6D7C3A03-1F27-4D6C-A04C-9F7AC4A0E401';
+
+interface EG4AccessoryContext {
+  plantId?: string;
+  plantName?: string;
+  role?: string;
+}
+
+function contextOf(
+  accessory: PlatformAccessory,
+): EG4AccessoryContext {
+  return accessory.context as EG4AccessoryContext;
+}
+
+function setAccessoryInformation(
+  platform: EG4Platform,
+  accessory: PlatformAccessory,
+  model: string,
+): void {
+  const context = contextOf(accessory);
+
+  accessory
+    .getService(platform.Service.AccessoryInformation)!
+    .setCharacteristic(
+      platform.Characteristic.Manufacturer,
+      'EG4 Electronics',
+    )
+    .setCharacteristic(platform.Characteristic.Model, model)
+    .setCharacteristic(
+      platform.Characteristic.SerialNumber,
+      `EG4-${context.plantId ?? 'system'}-${context.role ?? 'device'}`,
+    );
+}
+
+function addReadOnlyFloatCharacteristic(
+  platform: EG4Platform,
+  service: Service,
+  displayName: string,
+  uuid: string,
+  minValue: number,
+  maxValue: number,
+  minStep: number,
+): Characteristic {
+  const existing = service.characteristics.find(
+    (characteristic) => characteristic.UUID === uuid,
+  );
+
+  if (existing) {
+    return existing;
+  }
+
+  const characteristic = new platform.Characteristic(
+    displayName,
+    uuid,
+    {
+      format: platform.api.hap.Formats.FLOAT,
+      perms: [
+        platform.api.hap.Perms.PAIRED_READ,
+        platform.api.hap.Perms.NOTIFY,
+      ],
+      minValue,
+      maxValue,
+      minStep,
+    },
+  );
+
+  characteristic.updateValue(0);
+  service.addCharacteristic(characteristic);
+
+  return characteristic;
+}
+
+function gridVoltage(snapshot: EG4SystemSnapshot): number {
+  const raw = snapshot.midbox?.midboxData?.gridRmsVolt;
+  return typeof raw === 'number' ? raw / 10 : 0;
+}
+
+function totalHouseLoad(snapshot: EG4SystemSnapshot): number {
+  const system = snapshot.midbox?.deviceData;
+
+  const backup =
+    typeof system?.peps === 'number' ? system.peps : 0;
+
+  const nonBackup =
+    typeof system?.pLoad === 'number' ? system.pLoad : 0;
+
+  return Math.max(0, backup + nonBackup);
+}
+
+function systemSoc(snapshot: EG4SystemSnapshot): number {
+  const system = snapshot.midbox?.deviceData;
+
+  if (typeof system?.soc === 'number') {
+    return Math.max(0, Math.min(100, system.soc));
+  }
+
+  const values = (snapshot.parallel?.devices ?? [])
+    .map((device) => device.soc)
+    .filter((value): value is number => typeof value === 'number');
+
+  if (!values.length) {
+    return 0;
+  }
+
+  return Math.round(
+    values.reduce((sum, value) => sum + value, 0) /
+      values.length,
+  );
+}
+
+function numberFromText(value: unknown): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+export interface EG4AccessoryHandler {
+  update(snapshot: EG4SystemSnapshot): void;
+}
+
+export class EG4GridAccessory implements EG4AccessoryHandler {
+  private readonly service: Service;
+  private connected = false;
+
+  constructor(
+    private readonly platform: EG4Platform,
+    private readonly accessory: PlatformAccessory,
+  ) {
+    setAccessoryInformation(platform, accessory, 'EG4 Grid');
+
+    this.service =
+      accessory.getService(platform.Service.ContactSensor) ??
+      accessory.addService(
+        platform.Service.ContactSensor,
+        'Grid Connection',
+      );
+
+    this.service.setPrimaryService(true);
+
+    this.service
+      .getCharacteristic(
+        platform.Characteristic.ContactSensorState,
+      )
+      .onGet(
+        () =>
+          (this.connected
+            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+            : platform.Characteristic.ContactSensorState
+                .CONTACT_NOT_DETECTED) as CharacteristicValue,
+      );
+  }
+
+  update(snapshot: EG4SystemSnapshot): void {
+    const voltage = gridVoltage(snapshot);
+    this.connected = voltage >= 180;
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.ContactSensorState,
+      this.connected
+        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+        : this.platform.Characteristic.ContactSensorState
+            .CONTACT_NOT_DETECTED,
+    );
+
+    this.platform.log.info(
+      `[EG4 Grid] ${this.connected ? 'Connected' : 'Off-grid'} ` +
+        `(${voltage.toFixed(1)}V)`,
+    );
+  }
+}
+
+export class EG4BatteryAccessory
+  implements EG4AccessoryHandler
+{
+  private readonly chargeStateService: Service;
+  private readonly batteryService: Service;
+  private readonly powerCharacteristic: Characteristic;
+  private readonly voltageCharacteristic: Characteristic;
+
+  private soc = 0;
+  private charging = false;
+
+  constructor(
+    private readonly platform: EG4Platform,
+    private readonly accessory: PlatformAccessory,
+  ) {
+    setAccessoryInformation(platform, accessory, 'EG4 Battery');
+
+    this.chargeStateService =
+      accessory.getService('Battery Charging') ??
+      accessory.addService(
+        platform.Service.ContactSensor,
+        'Battery Charging',
+        'battery-charging',
+      );
+
+    this.chargeStateService.setPrimaryService(true);
+
+    this.chargeStateService
+      .getCharacteristic(
+        platform.Characteristic.ContactSensorState,
+      )
+      .onGet(
+        () =>
+          (this.charging
+            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+            : platform.Characteristic.ContactSensorState
+                .CONTACT_NOT_DETECTED) as CharacteristicValue,
+      );
+
+    this.batteryService =
+      accessory.getService(platform.Service.Battery) ??
+      accessory.addService(
+        platform.Service.Battery,
+        'Battery State',
+      );
+
+    this.batteryService
+      .getCharacteristic(platform.Characteristic.BatteryLevel)
+      .onGet(() => this.soc);
+
+    this.batteryService
+      .getCharacteristic(platform.Characteristic.ChargingState)
+      .onGet(
+        () =>
+          (this.charging
+            ? platform.Characteristic.ChargingState.CHARGING
+            : platform.Characteristic.ChargingState
+                .NOT_CHARGING) as CharacteristicValue,
+      );
+
+    this.batteryService
+      .getCharacteristic(platform.Characteristic.StatusLowBattery)
+      .onGet(
+        () =>
+          (this.soc <= 20
+            ? platform.Characteristic.StatusLowBattery
+                .BATTERY_LEVEL_LOW
+            : platform.Characteristic.StatusLowBattery
+                .BATTERY_LEVEL_NORMAL) as CharacteristicValue,
+      );
+
+    this.powerCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.batteryService,
+      'Battery Power (W)',
+      BATTERY_POWER_UUID,
+      -100000,
+      100000,
+      1,
+    );
+
+    this.voltageCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.batteryService,
+      'Battery Voltage (V)',
+      BATTERY_VOLTAGE_UUID,
+      0,
+      1000,
+      0.1,
+    );
+
+    this.chargeStateService.addLinkedService(
+      this.batteryService,
+    );
+  }
+
+  update(snapshot: EG4SystemSnapshot): void {
+    const system = snapshot.midbox?.deviceData;
+
+    this.soc = systemSoc(snapshot);
+
+    const batteryPower =
+      typeof system?.batPower === 'number'
+        ? system.batPower
+        : 0;
+
+    this.charging = batteryPower > 50;
+
+    const voltage =
+      typeof system?.vBat === 'number'
+        ? system.vBat / 10
+        : 0;
+
+    this.chargeStateService.updateCharacteristic(
+      this.platform.Characteristic.ContactSensorState,
+      this.charging
+        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+        : this.platform.Characteristic.ContactSensorState
+            .CONTACT_NOT_DETECTED,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.BatteryLevel,
+      this.soc,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.ChargingState,
+      this.charging
+        ? this.platform.Characteristic.ChargingState.CHARGING
+        : this.platform.Characteristic.ChargingState.NOT_CHARGING,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.StatusLowBattery,
+      this.soc <= 20
+        ? this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
+        : this.platform.Characteristic.StatusLowBattery
+            .BATTERY_LEVEL_NORMAL,
+    );
+
+    this.powerCharacteristic.updateValue(batteryPower);
+    this.voltageCharacteristic.updateValue(voltage);
+
+    this.platform.log.info(
+      `[EG4 Battery] SOC=${this.soc}% ` +
+        `Charging=${this.charging ? 'Yes' : 'No'} ` +
+        `Power=${batteryPower}W Voltage=${voltage.toFixed(1)}V`,
+    );
+  }
+}
+
+abstract class EG4PowerAccessory
+  implements EG4AccessoryHandler
+{
+  protected readonly stateService: Service;
+  protected readonly powerCharacteristic: Characteristic;
+  protected readonly totalEnergyCharacteristic: Characteristic;
+
+  protected active = false;
+
+  constructor(
+    protected readonly platform: EG4Platform,
+    protected readonly accessory: PlatformAccessory,
+    model: string,
+    serviceName: string,
+  ) {
+    setAccessoryInformation(platform, accessory, model);
+
+    this.stateService =
+      accessory.getService(serviceName) ??
+      accessory.addService(
+        platform.Service.ContactSensor,
+        serviceName,
+        serviceName.toLowerCase().replace(/\s+/g, '-'),
+      );
+
+    this.stateService.setPrimaryService(true);
+
+    this.stateService
+      .getCharacteristic(
+        platform.Characteristic.ContactSensorState,
+      )
+      .onGet(
+        () =>
+          (this.active
+            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+            : platform.Characteristic.ContactSensorState
+                .CONTACT_NOT_DETECTED) as CharacteristicValue,
+      );
+
+    this.powerCharacteristic = addReadOnlyFloatCharacteristic(
+      platform,
+      this.stateService,
+      'Current Power (W)',
+      EVE_CURRENT_CONSUMPTION_UUID,
+      0,
+      100000,
+      1,
+    );
+
+    this.totalEnergyCharacteristic =
+      addReadOnlyFloatCharacteristic(
+        platform,
+        this.stateService,
+        'Total Energy (kWh)',
+        EVE_TOTAL_CONSUMPTION_UUID,
+        0,
+        100000000,
+        0.001,
+      );
+  }
+
+  protected updateValues(
+    power: number,
+    totalEnergyKwh: number,
+  ): void {
+    this.active = power > 50;
+
+    this.stateService.updateCharacteristic(
+      this.platform.Characteristic.ContactSensorState,
+      this.active
+        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
+        : this.platform.Characteristic.ContactSensorState
+            .CONTACT_NOT_DETECTED,
+    );
+
+    this.powerCharacteristic.updateValue(
+      Math.max(0, power),
+    );
+
+    this.totalEnergyCharacteristic.updateValue(
+      Math.max(0, totalEnergyKwh),
+    );
+  }
+
+  abstract update(snapshot: EG4SystemSnapshot): void;
+}
+
+export class EG4SolarAccessory extends EG4PowerAccessory {
+  constructor(
+    platform: EG4Platform,
+    accessory: PlatformAccessory,
+  ) {
+    super(
+      platform,
+      accessory,
+      'EG4 Solar',
+      'Solar Production',
+    );
+  }
+
+  update(snapshot: EG4SystemSnapshot): void {
+    const power =
+      typeof snapshot.midbox?.deviceData?.ppv === 'number'
+        ? snapshot.midbox.deviceData.ppv
+        : 0;
+
+    const totalEnergy = numberFromText(
+      snapshot.energy?.totalYieldingText,
+    );
+
+    this.updateValues(power, totalEnergy);
+
+    this.platform.log.info(
+      `[EG4 Solar] Power=${power}W ` +
+        `Total=${totalEnergy.toFixed(1)}kWh`,
+    );
+  }
+}
+
+export class EG4LoadAccessory extends EG4PowerAccessory {
+  constructor(
+    platform: EG4Platform,
+    accessory: PlatformAccessory,
+  ) {
+    super(
+      platform,
+      accessory,
+      'EG4 House Load',
+      'House Load',
+    );
+  }
+
+  update(snapshot: EG4SystemSnapshot): void {
+    const power = totalHouseLoad(snapshot);
+
+    const totalEnergy = numberFromText(
+      snapshot.energy?.totalUsageText,
+    );
+
+    this.updateValues(power, totalEnergy);
+
+    this.platform.log.info(
+      `[EG4 House Load] Power=${power}W ` +
+        `Total=${totalEnergy.toFixed(1)}kWh`,
+    );
+  }
+}
