@@ -2,7 +2,7 @@
   "pluginAlias": "EG4",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "EG4 cloud integration. v0.1 is discovery-only and does not yet create HomeKit accessories.",
+  "headerDisplay": "EG4 cloud integration. v0.2 creates a read-only HomeKit system battery accessory and logs live system power data.",
   "footerDisplay": "Unofficial community plugin. Not affiliated with EG4 Electronics or Luxpower.",
   "schema": {
     "type": "object",
@@ -33,6 +33,14 @@
         "title": "API Debug Logging",
         "type": "boolean",
         "default": false
+      },
+      "pollInterval": {
+        "title": "Polling Interval (seconds)",
+        "type": "integer",
+        "default": 120,
+        "minimum": 60,
+        "maximum": 900,
+        "required": true
       }
     }
   }

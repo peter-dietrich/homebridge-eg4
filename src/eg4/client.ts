@@ -1,12 +1,11 @@
 import {
-  EG4BatteryInfo,
   EG4ClientOptions,
   EG4DeviceListResponse,
+  EG4EnergyInfo,
   EG4LoginResponse,
   EG4MidboxRuntime,
   EG4ParallelGroupResponse,
   EG4PlantListResponse,
-  EG4Runtime,
   JsonObject,
 } from './types.js';
 
@@ -16,13 +15,21 @@ export class EG4Error extends Error {}
 export class EG4AuthenticationError extends EG4Error {}
 export class EG4ApiError extends EG4Error {}
 
+interface ResponseDiagnostic {
+  status: number;
+  contentType: string;
+  bodySample: string;
+}
+
 export class EG4Client {
   private readonly username: string;
   private readonly password: string;
   private readonly baseUrl: string;
   private readonly debug?: (message: string) => void;
 
-  private sessionId?: string;
+  // Native fetch() does not maintain browser cookies for us, so keep a small
+  // in-memory cookie jar containing only name=value pairs returned by EG4.
+  private readonly cookies = new Map<string, string>();
 
   constructor(options: EG4ClientOptions) {
     this.username = options.username;
@@ -36,24 +43,25 @@ export class EG4Client {
   }
 
   async login(): Promise<EG4LoginResponse> {
+    // Clear stale cookies before a fresh authentication attempt.
+    this.cookies.clear();
+
     const response = await fetch(`${this.baseUrl}/WManage/api/login`, {
       method: 'POST',
       headers: this.headers(false),
       body: new URLSearchParams({
         account: this.username,
         password: this.password,
+        language: 'ENGLISH',
       }),
-      redirect: 'manual',
     });
 
-    const setCookies = typeof response.headers.getSetCookie === 'function'
-      ? response.headers.getSetCookie()
-      : [response.headers.get('set-cookie') ?? ''];
+    this.captureCookies(response);
 
-    const cookieText = setCookies.join('; ');
-    const sessionMatch = cookieText.match(/JSESSIONID=([^;,\s]+)/i);
-
-    const body = await this.readJson<EG4LoginResponse>(response);
+    const body = await this.readJson<EG4LoginResponse>(
+      response,
+      '/WManage/api/login',
+    );
 
     if (!response.ok || body.success === false) {
       throw new EG4AuthenticationError(
@@ -61,14 +69,15 @@ export class EG4Client {
       );
     }
 
-    if (!sessionMatch?.[1]) {
+    if (this.cookies.size === 0) {
       throw new EG4AuthenticationError(
-        'EG4 login response did not contain a JSESSIONID session cookie.',
+        'EG4 login succeeded but did not return any session cookies.',
       );
     }
 
-    this.sessionId = sessionMatch[1];
-    this.logDebug('Authenticated and received EG4 session cookie.');
+    this.logDebug(
+      `Authenticated. Stored cookie names: ${[...this.cookies.keys()].join(', ')}`,
+    );
 
     return body;
   }
@@ -84,30 +93,27 @@ export class EG4Client {
     );
   }
 
-  async getParallelGroups(plantId: string): Promise<EG4ParallelGroupResponse> {
+  async getConfigDevices(
+    plantId: string,
+    targetSerialNum = '',
+  ): Promise<EG4DeviceListResponse> {
+    return this.postForm<EG4DeviceListResponse>(
+      '/WManage/web/config/inverter/list',
+      {
+        page: '1',
+        rows: '100',
+        plantId,
+        searchText: '',
+        targetSerialNum,
+      },
+    );
+  }
+
+  async getParallelGroupDetails(
+    serialNum: string,
+  ): Promise<EG4ParallelGroupResponse> {
     return this.postForm<EG4ParallelGroupResponse>(
       '/WManage/api/inverterOverview/getParallelGroupDetails',
-      { plantId },
-    );
-  }
-
-  async getDeviceOverview(plantId: string): Promise<EG4DeviceListResponse> {
-    return this.postForm<EG4DeviceListResponse>(
-      '/WManage/api/inverterOverview/list',
-      { plantId },
-    );
-  }
-
-  async getInverterRuntime(serialNum: string): Promise<EG4Runtime> {
-    return this.postForm<EG4Runtime>(
-      '/WManage/api/inverter/getInverterRuntime',
-      { serialNum },
-    );
-  }
-
-  async getBatteryInfo(serialNum: string): Promise<EG4BatteryInfo> {
-    return this.postForm<EG4BatteryInfo>(
-      '/WManage/api/battery/getBatteryInfo',
       { serialNum },
     );
   }
@@ -119,16 +125,28 @@ export class EG4Client {
     );
   }
 
+  async getParallelEnergyInfo(
+    serialNum: string,
+  ): Promise<EG4EnergyInfo> {
+    return this.postForm<EG4EnergyInfo>(
+      '/WManage/api/inverter/getInverterEnergyInfoParallel',
+      { serialNum },
+    );
+  }
+
   private async postForm<T extends JsonObject>(
     path: string,
     form: Record<string, string>,
     retryAuth = true,
   ): Promise<T> {
-    if (!this.sessionId) {
+    if (this.cookies.size === 0) {
       await this.login();
     }
 
-    this.logDebug(`POST ${path}`);
+    this.logDebug(
+      `POST ${path} formKeys=[${Object.keys(form).join(',')}]` +
+      (form.plantId ? ` plantIdSuffix=${this.maskSuffix(form.plantId)}` : ''),
+    );
 
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
@@ -136,14 +154,15 @@ export class EG4Client {
       body: new URLSearchParams(form),
     });
 
+    this.captureCookies(response);
+
     if ((response.status === 401 || response.status === 403) && retryAuth) {
-      this.logDebug('Session expired; re-authenticating once.');
-      this.sessionId = undefined;
+      this.logDebug('Session rejected; re-authenticating once.');
       await this.login();
       return this.postForm<T>(path, form, false);
     }
 
-    const body = await this.readJson<T>(response);
+    const body = await this.readJson<T>(response, path);
 
     if (!response.ok) {
       throw new EG4ApiError(
@@ -152,7 +171,16 @@ export class EG4Client {
     }
 
     if ('success' in body && body.success === false) {
-      throw new EG4ApiError(`EG4 API reported failure for ${path}.`);
+      const message =
+        typeof body.message === 'string'
+          ? body.message
+          : typeof body.msg === 'string'
+            ? body.msg
+            : 'no message supplied';
+
+      throw new EG4ApiError(
+        `EG4 API reported failure for ${path}: ${message}`,
+      );
     }
 
     return body;
@@ -160,29 +188,96 @@ export class EG4Client {
 
   private headers(authenticated: boolean): HeadersInit {
     const headers: Record<string, string> = {
-      'Accept': 'application/json',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      'User-Agent': 'homebridge-eg4/0.1.0-dev',
+      'User-Agent': 'homebridge-eg4/0.2.1-dev',
+      'X-Requested-With': 'XMLHttpRequest',
+      Origin: this.baseUrl,
+      Referer: `${this.baseUrl}/WManage/`,
     };
 
-    if (authenticated && this.sessionId) {
-      headers.Cookie = `JSESSIONID=${this.sessionId}`;
+    if (authenticated && this.cookies.size > 0) {
+      headers.Cookie = [...this.cookies.entries()]
+        .map(([name, value]) => `${name}=${value}`)
+        .join('; ');
     }
 
     return headers;
   }
 
-  private async readJson<T>(response: Response): Promise<T> {
+  private captureCookies(response: Response): void {
+    const headerObject = response.headers as Headers & {
+      getSetCookie?: () => string[];
+    };
+
+    const setCookies =
+      typeof headerObject.getSetCookie === 'function'
+        ? headerObject.getSetCookie()
+        : [response.headers.get('set-cookie') ?? ''];
+
+    for (const rawCookie of setCookies) {
+      if (!rawCookie) {
+        continue;
+      }
+
+      // A Set-Cookie header starts with name=value followed by attributes.
+      // getSetCookie() gives us individual headers on current Node versions.
+      const firstPart = rawCookie.split(';', 1)[0] ?? '';
+      const equalsIndex = firstPart.indexOf('=');
+
+      if (equalsIndex <= 0) {
+        continue;
+      }
+
+      const name = firstPart.slice(0, equalsIndex).trim();
+      const value = firstPart.slice(equalsIndex + 1).trim();
+
+      if (name && value) {
+        this.cookies.set(name, value);
+      }
+    }
+  }
+
+  private async readJson<T>(
+    response: Response,
+    path: string,
+  ): Promise<T> {
     const text = await response.text();
 
     try {
       return JSON.parse(text) as T;
     } catch {
-      const sample = text.slice(0, 160).replace(/\s+/g, ' ');
+      const diagnostic = this.makeDiagnostic(response, text);
+
+      this.logDebug(
+        `${path} returned non-JSON: HTTP=${diagnostic.status} ` +
+        `contentType="${diagnostic.contentType}" sample="${diagnostic.bodySample}"`,
+      );
+
       throw new EG4ApiError(
-        `Expected JSON from EG4 but received a different response: ${sample}`,
+        `Expected JSON from EG4 for ${path} but received ` +
+        `HTTP ${diagnostic.status} ${diagnostic.contentType || '(unknown content type)'}. ` +
+        `Body sample: ${diagnostic.bodySample}`,
       );
     }
+  }
+
+  private makeDiagnostic(response: Response, body: string): ResponseDiagnostic {
+    return {
+      status: response.status,
+      contentType: response.headers.get('content-type') ?? '',
+      bodySample: body
+        .slice(0, 240)
+        .replace(/\s+/g, ' ')
+        .replace(/(account|password)=([^&\s]+)/gi, '$1=[REDACTED]'),
+    };
+  }
+
+  private maskSuffix(value: string): string {
+    if (value.length <= 3) {
+      return '***';
+    }
+    return `***${value.slice(-3)}`;
   }
 
   private logDebug(message: string): void {
