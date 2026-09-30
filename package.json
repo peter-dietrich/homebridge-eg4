@@ -1,6 +1,6 @@
 {
   "name": "homebridge-eg4",
-  "version": "0.3.4-dev.1",
+  "version": "0.3.5-dev.1",
   "description": "Homebridge plugin for EG4 solar and battery systems using the EG4 Monitor cloud API.",
   "type": "module",
   "main": "dist/index.js",
