@@ -14,6 +14,7 @@ import {
   EG4GridAccessory,
   EG4LoadAccessory,
   EG4SolarAccessory,
+  EG4GeneratorAccessory,
 } from './accessories/splitAccessories.js';
 
 import { EG4Client } from './eg4/client.js';
@@ -32,7 +33,8 @@ type AccessoryRole =
   | 'grid'
   | 'battery'
   | 'solar'
-  | 'load';
+  | 'load'
+  | 'generator';
 
 interface AccessoryDefinition {
   role: AccessoryRole;
@@ -61,6 +63,11 @@ const ACCESSORY_DEFINITIONS: AccessoryDefinition[] = [
     name: 'EG4 House Load',
     model: 'EG4 House Load',
   },
+  {
+    role: 'generator',
+    name: 'EG4 Generator',
+    model: 'EG4 Generator',
+  },
 ];
 
 export class EG4Platform implements DynamicPlatformPlugin {
@@ -86,7 +93,7 @@ export class EG4Platform implements DynamicPlatformPlugin {
     this.Characteristic = this.api.hap.Characteristic;
 
     this.log.info(
-      'Initializing EG4 platform v0.3.5-dev.',
+      'Initializing EG4 platform v0.3.6-dev.',
     );
 
     this.api.on('didFinishLaunching', () => {
@@ -264,6 +271,13 @@ export class EG4Platform implements DynamicPlatformPlugin {
 
       case 'load':
         handler = new EG4LoadAccessory(
+          this,
+          accessory,
+        );
+        break;
+
+      case 'generator':
+        handler = new EG4GeneratorAccessory(
           this,
           accessory,
         );
