@@ -8,11 +8,11 @@
 
 Unofficial, read-only Homebridge plugin for EG4 solar, battery, grid, load, and generator status using an EG4 Monitor-compatible interface.
 
-> **Current release:** 0.5.0. This project is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
+> **Current release:** 0.6.0. This project is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
 
 ## What it does
 
-The plugin logs in with the account you provide, discovers accessible plants and devices, builds one shared system snapshot, normalizes the best telemetry available for the detected topology, and exposes selected logical accessories to HomeKit.
+The plugin logs in with the account you provide, discovers accessible plants and devices, groups parallel inverters into logical electrical systems, separates independent systems that share one EG4 Monitor plant, normalizes the best telemetry available for each topology, and exposes selected logical accessories to HomeKit.
 
 Typical Apple Home tiles include:
 
@@ -69,30 +69,36 @@ Development has been fully validated on:
 - GridBOSS
 - parallel EG4 battery storage
 
-The compatibility layer now prefers the best telemetry source available rather than assuming every system has a GridBOSS.
+The direct-runtime compatibility path has also been validated end-to-end against EG4's public demo environment for standalone 18KPV and FlexBOSS21 examples.
+
+The compatibility layer prefers the best telemetry source available rather than assuming every system has a GridBOSS.
 
 | Configuration | Expected behavior |
 | --- | --- |
-| 18KPV + GridBOSS + batteries | Fully tested |
-| 18KPV without GridBOSS | Uses inverter/parallel fallbacks where available |
+| Parallel 18KPV + GridBOSS + batteries | Fully tested on a real installation |
+| Standalone 18KPV without GridBOSS | Direct inverter runtime/energy fallback validated against EG4 public demo telemetry |
+| FlexBOSS21 standalone | Direct inverter runtime/energy fallback validated against EG4 public demo telemetry |
+| Multiple parallel inverters in one electrical system | Grouped into one logical system / one five-accessory set |
+| Multiple independent systems under one Monitor plant | Exposed as separate A/B/C-labelled five-accessory sets |
 | System without batteries | Battery can be hidden or shown as N/A |
 | GridBOSS with no generator connected | Generator may remain visible as `Gen OFF` |
-| Other EG4 hybrid inverter models | Experimental automatic discovery |
 | Missing/unsupported telemetry | Selected tile shows `N/A` or is hidden |
 
-Other EG4 inverter families remain experimental until tested with real installations. The plugin intentionally avoids inventing an OFF state when telemetry is unavailable.
+Public-demo validation confirms API/topology compatibility but is not a substitute for hardware testing on every inverter/firmware combination. The plugin intentionally avoids inventing an OFF state when telemetry is unavailable.
 
 ## Telemetry fallback model
 
-Whole-system GridBOSS data is preferred where available. Without it, the plugin falls back to inverter/parallel telemetry when possible.
+Whole-system GridBOSS data is preferred where available. Without it, the plugin falls back to parallel-group telemetry and then direct inverter runtime/energy data when available.
 
 Examples:
 
-- Battery: GridBOSS aggregate SOC/power -> inverter SOC and charge/discharge telemetry
-- Solar: GridBOSS aggregate PV power -> sum of inverter PV input power
-- Load: GridBOSS aggregate load -> inverter EPS/load telemetry
-- Grid: GridBOSS grid voltage/power -> other supported grid telemetry when available
-- Generator: GridBOSS generator telemetry -> other compatible telemetry when supported
+- Battery: GridBOSS aggregate SOC/power -> parallel inverter SOC/flows -> direct inverter runtime
+- Solar: GridBOSS aggregate PV power -> summed parallel PV -> direct inverter PV power
+- Load: GridBOSS aggregate load -> parallel EPS/load telemetry -> direct inverter load fields -> derived power-balance fallback
+- Grid: GridBOSS grid voltage/power -> direct inverter grid voltage and import/export telemetry
+- Generator: GridBOSS generator voltage/frequency/power -> direct inverter generator power where available
+
+For direct-inverter systems without a whole-home load field, the plugin may derive approximate system load from grid import/export, solar production, and battery charge/discharge power.
 
 ## Read-only safety model
 
@@ -148,11 +154,12 @@ Approximate flow:
 EG4-compatible login
   -> plant list
   -> device list
-  -> primary inverter/device selection
-  -> parallel topology when supported
+  -> logical-system discovery
+       -> group reported parallel members
+       -> keep independent systems separate
   -> GridBOSS runtime when present
-  -> energy totals when supported
-  -> normalized system snapshot
+  -> parallel or direct inverter runtime/energy fallback
+  -> normalized snapshot per logical system
   -> selected Battery / Grid / Solar / Load / Generator accessories
 ```
 
@@ -242,8 +249,9 @@ See [SUPPORT.md](SUPPORT.md) for support scope and reporting guidance.
 ## Known limitations
 
 - The EG4 Monitor interface used by this plugin is undocumented/private and can change without notice.
-- Compatibility beyond the fully tested 18KPV + GridBOSS topology is currently best-effort and may depend on which telemetry fields the EG4 API exposes for a given installation.
-- Grid and Generator fallbacks are more limited than Battery, Solar, and Load fallbacks on systems without GridBOSS telemetry.
+- Compatibility beyond the fully tested 18KPV + GridBOSS topology can depend on which telemetry fields the EG4 API exposes for a given installation and firmware.
+- Standalone 18KPV and FlexBOSS21 direct-runtime paths have been validated against EG4 public demo telemetry, but not yet on every real-world hardware/firmware combination.
+- Derived direct-inverter load is an approximation when EG4 does not expose an explicit whole-home load value.
 - Apple Home controls which HomeKit characteristics are visible in its UI. Some watt, voltage, frequency, and energy characteristics may be available over HAP but not shown directly in the Home app.
 - Status tiles use HomeKit Outlet services for Apple Home presentation. They are intentionally read-only at the EG4 side; apparent writes are intercepted locally and the observed state is restored.
 - This plugin does not provide local-LAN inverter control or equipment-control features.

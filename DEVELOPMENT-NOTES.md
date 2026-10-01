@@ -30,6 +30,22 @@ Preferred source order:
 
 A metric with `available: false` must not be represented as a known OFF state.
 
+## Logical systems within a plant
+
+An EG4 Monitor plant can contain more than one electrical system. The plugin must not assume that every inverter listed under one plant participates in the same power flow.
+
+Discovery rules:
+
+- inverters reported together by the parallel-group endpoint are treated as one logical electrical system
+- a GridBOSS is associated with the logical system identified by the parallel group's midbox serial
+- an inverter with no usable parallel-group membership is treated as a standalone logical system
+- one logical system in a plant preserves the historical plant-based HomeKit UUIDs
+- multiple logical systems in one plant receive separate system identities and therefore separate Battery, Grid, Solar, Load, and Generator accessories
+- multi-system accessory names use deterministic short prefixes `A`, `B`, `C`, etc. so Apple Home can distinguish systems without tying labels to a specific inverter model
+- accessories belonging to systems no longer returned by successful discovery are explicitly unregistered
+
+This means a two-inverter parallel installation remains one five-accessory HomeKit system, while two independent inverter systems under the same EG4 Monitor plant can expose two separate five-accessory sets.
+
 ## Accessory lifecycle
 
 Selected accessories are created/updated from the shared snapshot.
@@ -93,6 +109,47 @@ This semantic distinction is required:
 - `N/A`: telemetry required to determine the state is unavailable.
 
 Do not infer OFF from missing fields.
+
+## Public demo topology discovery
+
+The repository includes a development-only utility for exercising the public EG4 demo plant without using a personal EG4 account:
+
+```bash
+node tools/demo-discover.mjs
+```
+
+The script:
+
+- establishes the public EG4 guest/demo session
+- enumerates visible demo plants and devices
+- probes the same read-only parallel, midbox, and energy endpoints used by the plugin
+- applies the current device-selection and telemetry-normalization rules
+- prints a sanitized compatibility report to stdout
+- never sends EG4 control commands
+
+The tool intentionally lives outside `src/` and is not included in the npm `files` allowlist, so it is not shipped with the production package.
+
+Use the report to identify additional inverter/topology combinations and telemetry-field differences before changing production compatibility logic. Do not treat public demo telemetry as a substitute for testing on real customer hardware.
+
+### End-to-end Homebridge demo mode
+
+For development only, Homebridge can use the public EG4 guest demo session instead of account credentials. This setting is intentionally omitted from `config.schema.json` and is not a supported end-user option.
+
+Add the following property manually to the EG4 platform configuration:
+
+```json
+"demoMode": true
+```
+
+Alternatively, start Homebridge with:
+
+```bash
+HOMEBRIDGE_EG4_DEMO=1
+```
+
+When enabled, the plugin ignores EG4 account credentials for authentication, establishes the public demo guest session, and runs the normal snapshot/accessory pipeline. This is intended for end-to-end validation from EG4 demo telemetry through Homebridge and Apple Home.
+
+Do not document demo mode as a normal production feature.
 
 ## Testing new EG4 topologies
 

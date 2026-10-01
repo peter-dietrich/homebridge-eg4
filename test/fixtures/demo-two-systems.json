@@ -1,0 +1,97 @@
+{
+  "login": {
+    "success": true
+  },
+  "plants": {
+    "rows": [
+      {
+        "plantId": "DEMO-PLANT",
+        "name": "Demo Station"
+      }
+    ]
+  },
+  "devices": {
+    "DEMO-PLANT": {
+      "rows": [
+        {
+          "serialNum": "DEMO-18K-001",
+          "deviceType": 6,
+          "deviceTypeText": "18KPV",
+          "statusText": "AC Charge",
+          "powerRatingText": "12kW"
+        },
+        {
+          "serialNum": "DEMO-FB21-002",
+          "deviceType": 6,
+          "deviceTypeText": "FlexBOSS21",
+          "statusText": "PV&Battery Grid off",
+          "powerRatingText": "16kW"
+        }
+      ]
+    }
+  },
+  "parallel": {
+    "DEMO-18K-001": {
+      "success": true,
+      "devices": []
+    },
+    "DEMO-FB21-002": {
+      "success": true,
+      "devices": []
+    }
+  },
+  "runtime": {
+    "DEMO-18K-001": {
+      "success": true,
+      "hasRuntimeData": true,
+      "serialNum": "DEMO-18K-001",
+      "ppv": 0,
+      "pCharge": 6500,
+      "pDisCharge": 0,
+      "batPower": 6500,
+      "soc": 83,
+      "vBat": 541,
+      "peps": 0,
+      "pToGrid": 0,
+      "pToUser": 6800,
+      "vacr": 2362,
+      "fac": 6002,
+      "genPower": 0
+    },
+    "DEMO-FB21-002": {
+      "success": true,
+      "hasRuntimeData": true,
+      "serialNum": "DEMO-FB21-002",
+      "ppv": 134,
+      "pCharge": 0,
+      "pDisCharge": 98,
+      "batPower": -98,
+      "soc": 98,
+      "vBat": 535,
+      "peps": 0,
+      "pToGrid": 0,
+      "pToUser": 0,
+      "vacr": 0,
+      "fac": 0,
+      "genPower": 0
+    }
+  },
+  "directEnergy": {
+    "DEMO-18K-001": {
+      "success": true,
+      "hasRuntimeData": true,
+      "todayYieldingText": "0",
+      "totalYieldingText": "100",
+      "todayUsageText": "1.1",
+      "totalUsageText": "211.5"
+    },
+    "DEMO-FB21-002": {
+      "success": true,
+      "hasRuntimeData": true,
+      "todayYieldingText": "3.8",
+      "totalYieldingText": "105.5",
+      "todayUsageText": "2.4",
+      "totalUsageText": "49.6"
+    }
+  }
+}

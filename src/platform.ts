@@ -28,6 +28,7 @@ interface EG4PlatformConfig extends PlatformConfig {
   allowCustomEndpoint?: boolean;
   allowInsecureLocalEndpoint?: boolean;
   debugApi?: boolean;
+  demoMode?: boolean;
   pollInterval?: number;
   showBattery?: boolean;
   showGrid?: boolean;
@@ -133,16 +134,27 @@ export class EG4Platform implements DynamicPlatformPlugin {
   }
 
   private async start(): Promise<void> {
-    if (!this.config.username || !this.config.password) {
+    const demoMode =
+      this.config.demoMode === true ||
+      process.env.HOMEBRIDGE_EG4_DEMO === '1';
+
+    if (!demoMode && (!this.config.username || !this.config.password)) {
       this.log.warn(
         'EG4 username/password are not configured. No API calls will be made.',
       );
       return;
     }
 
+    if (demoMode) {
+      this.log.warn(
+        'EG4 development demo mode is enabled. Using the public EG4 guest demo session instead of account credentials.',
+      );
+    }
+
     this.client = new EG4Client({
-      username: this.config.username,
-      password: this.config.password,
+      username: this.config.username ?? '',
+      password: this.config.password ?? '',
+      demoMode,
       baseUrl:
         this.config.baseUrl ?? DEFAULT_BASE_URL,
       allowCustomEndpoint:
@@ -178,8 +190,10 @@ export class EG4Platform implements DynamicPlatformPlugin {
     try {
       const snapshots = await getSystemSnapshots(
         this.client,
-        (message) => this.log.warn(message),
+        (message) => this.log.debug(message),
       );
+
+      const desiredAccessoryUuids = new Set<string>();
 
       for (const snapshot of snapshots) {
         const plantId = String(
@@ -187,12 +201,13 @@ export class EG4Platform implements DynamicPlatformPlugin {
             snapshot.plant.id ??
             snapshot.plant.name,
         );
+        const systemId = snapshot.systemId;
 
         this.removeLegacySystemAccessory(plantId);
 
         for (const definition of ACCESSORY_DEFINITIONS) {
           if (!this.isRoleEnabled(definition.role)) {
-            this.removeAccessory(plantId, definition.role);
+            this.removeAccessory(systemId, definition.role);
             continue;
           }
 
@@ -205,13 +220,22 @@ export class EG4Platform implements DynamicPlatformPlugin {
             !dataAvailable &&
             this.config.missingDataBehavior === 'hide'
           ) {
-            this.removeAccessory(plantId, definition.role);
+            this.removeAccessory(systemId, definition.role);
             continue;
           }
 
+          const accessoryUuid = this.api.hap.uuid.generate(
+            `eg4-${definition.role}-${systemId}`,
+          );
+          desiredAccessoryUuids.add(accessoryUuid);
+
           const accessory = this.ensureAccessory(
+            systemId,
             plantId,
             snapshot.plant.name ?? 'EG4',
+            snapshot.systemLabel,
+            snapshot.systemShortLabel,
+            snapshot.multipleSystemsInPlant,
             definition,
           );
 
@@ -223,6 +247,8 @@ export class EG4Platform implements DynamicPlatformPlugin {
           handler.update(snapshot);
         }
       }
+
+      this.removeStaleAccessories(desiredAccessoryUuids);
     } catch (error) {
       this.log.error(
         `EG4 refresh failed: ${
@@ -257,11 +283,11 @@ export class EG4Platform implements DynamicPlatformPlugin {
   }
 
   private removeAccessory(
-    plantId: string,
+    systemId: string,
     role: AccessoryRole,
   ): void {
     const uuid = this.api.hap.uuid.generate(
-      `eg4-${role}-${plantId}`,
+      `eg4-${role}-${systemId}`,
     );
 
     const accessory = this.accessories.find(
@@ -290,12 +316,16 @@ export class EG4Platform implements DynamicPlatformPlugin {
   }
 
   private ensureAccessory(
+    systemId: string,
     plantId: string,
     plantName: string,
+    systemLabel: string | undefined,
+    systemShortLabel: string | undefined,
+    multipleSystemsInPlant: boolean,
     definition: AccessoryDefinition,
   ): PlatformAccessory {
     const uuid = this.api.hap.uuid.generate(
-      `eg4-${definition.role}-${plantId}`,
+      `eg4-${definition.role}-${systemId}`,
     );
 
     let accessory = this.accessories.find(
@@ -303,13 +333,23 @@ export class EG4Platform implements DynamicPlatformPlugin {
     );
 
     if (!accessory) {
+      const baseName = definition.name.replace(/^EG4\s+/, '');
+      const displayName =
+        multipleSystemsInPlant && systemShortLabel
+          ? `${systemShortLabel} ${baseName}`
+          : definition.name;
+
       accessory = new this.api.platformAccessory(
-        definition.name,
+        displayName,
         uuid,
       );
 
+      accessory.context.systemId = systemId;
       accessory.context.plantId = plantId;
       accessory.context.plantName = plantName;
+      accessory.context.systemLabel = systemLabel;
+      accessory.context.systemShortLabel = systemShortLabel;
+      accessory.context.multipleSystemsInPlant = multipleSystemsInPlant;
       accessory.context.role = definition.role;
 
       this.api.registerPlatformAccessories(
@@ -325,7 +365,52 @@ export class EG4Platform implements DynamicPlatformPlugin {
       );
     }
 
+    accessory.context.systemId = systemId;
+    accessory.context.plantId = plantId;
+    accessory.context.plantName = plantName;
+    accessory.context.systemLabel = systemLabel;
+    accessory.context.systemShortLabel = systemShortLabel;
+    accessory.context.multipleSystemsInPlant = multipleSystemsInPlant;
+    accessory.context.role = definition.role;
+
     return accessory;
+  }
+
+  private removeStaleAccessories(
+    desiredAccessoryUuids: Set<string>,
+  ): void {
+    const stale = this.accessories.filter((accessory) => {
+      const role = accessory.context.role as AccessoryRole | undefined;
+      return (
+        role !== undefined &&
+        ACCESSORY_DEFINITIONS.some(
+          (definition) => definition.role === role,
+        ) &&
+        !desiredAccessoryUuids.has(accessory.UUID)
+      );
+    });
+
+    if (!stale.length) {
+      return;
+    }
+
+    this.api.unregisterPlatformAccessories(
+      'homebridge-eg4',
+      'EG4',
+      stale,
+    );
+
+    for (const accessory of stale) {
+      const index = this.accessories.indexOf(accessory);
+      if (index >= 0) {
+        this.accessories.splice(index, 1);
+      }
+      this.handlers.delete(accessory.UUID);
+    }
+
+    this.log.info(
+      `Removed ${stale.length} stale EG4 HomeKit accessor${stale.length === 1 ? 'y' : 'ies'} from systems no longer discovered.`,
+    );
   }
 
   private ensureHandler(

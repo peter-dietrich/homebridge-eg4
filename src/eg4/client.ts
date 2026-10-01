@@ -2,6 +2,7 @@ import {
   EG4ClientOptions,
   EG4DeviceListResponse,
   EG4EnergyInfo,
+  EG4InverterRuntime,
   EG4LoginResponse,
   EG4MidboxRuntime,
   EG4ParallelGroupResponse,
@@ -31,6 +32,7 @@ export class EG4Client {
   private readonly allowCustomEndpoint: boolean;
   private readonly allowInsecureLocalEndpoint: boolean;
   private readonly debug?: (message: string) => void;
+  private sessionMode: 'login' | 'demo' = 'login';
 
   // Native fetch() does not maintain browser cookies for us, so keep a small
   // in-memory cookie jar containing only name=value pairs returned by EG4.
@@ -42,6 +44,7 @@ export class EG4Client {
     this.allowCustomEndpoint = options.allowCustomEndpoint ?? false;
     this.allowInsecureLocalEndpoint =
       options.allowInsecureLocalEndpoint ?? false;
+    this.sessionMode = options.demoMode ? 'demo' : 'login';
     this.baseUrl = this.validateBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
     this.debug = options.debug;
   }
@@ -51,6 +54,8 @@ export class EG4Client {
   }
 
   async login(): Promise<EG4LoginResponse> {
+    this.sessionMode = 'login';
+
     // Clear stale cookies before a fresh authentication attempt.
     this.cookies.clear();
 
@@ -90,6 +95,76 @@ export class EG4Client {
     return body;
   }
 
+  /**
+   * Establish the public EG4 demo/guest browser session without sending
+   * configured account credentials. This is intended for development and
+   * compatibility diagnostics against EG4's public demo plant.
+   */
+  async startDemoSession(): Promise<void> {
+    this.sessionMode = 'demo';
+    this.cookies.clear();
+
+    let nextUrl = new URL(
+      '/WManage/web/login/viewDemoPlant?customCompany=',
+      `${this.baseUrl}/`,
+    );
+
+    for (let redirectCount = 0; redirectCount < 6; redirectCount += 1) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        headers: this.browserHeaders(this.cookies.size > 0),
+        redirect: 'manual',
+      });
+
+      this.captureCookies(response);
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+
+        if (!location) {
+          throw new EG4AuthenticationError(
+            'EG4 demo session redirected without a Location header.',
+          );
+        }
+
+        nextUrl = new URL(location, nextUrl);
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new EG4AuthenticationError(
+          `EG4 demo session failed (HTTP ${response.status}).`,
+        );
+      }
+
+      if (this.cookies.size === 0) {
+        throw new EG4AuthenticationError(
+          'EG4 demo page loaded but did not establish a guest session cookie.',
+        );
+      }
+
+      this.logDebug(
+        `Demo session established. Stored cookie names: ${[
+          ...this.cookies.keys(),
+        ].join(', ')}`,
+      );
+      return;
+    }
+
+    throw new EG4AuthenticationError(
+      'EG4 demo session exceeded the redirect limit.',
+    );
+  }
+
+  async initializeSession(): Promise<EG4LoginResponse> {
+    if (this.sessionMode === 'demo') {
+      await this.startDemoSession();
+      return { success: true };
+    }
+
+    return this.login();
+  }
+
   async getPlants(): Promise<EG4PlantListResponse> {
     return this.postForm<EG4PlantListResponse>(
       '/WManage/web/config/plant/list/viewer',
@@ -126,6 +201,21 @@ export class EG4Client {
     );
   }
 
+
+  async getInverterRuntime(serialNum: string): Promise<EG4InverterRuntime> {
+    return this.postForm<EG4InverterRuntime>(
+      '/WManage/api/inverter/getInverterRuntime',
+      { serialNum },
+    );
+  }
+
+  async getInverterEnergyInfo(serialNum: string): Promise<EG4EnergyInfo> {
+    return this.postForm<EG4EnergyInfo>(
+      '/WManage/api/inverter/getInverterEnergyInfo',
+      { serialNum },
+    );
+  }
+
   async getMidboxRuntime(serialNum: string): Promise<EG4MidboxRuntime> {
     return this.postForm<EG4MidboxRuntime>(
       '/WManage/api/midbox/getMidboxRuntime',
@@ -148,7 +238,7 @@ export class EG4Client {
     retryAuth = true,
   ): Promise<T> {
     if (this.cookies.size === 0) {
-      await this.login();
+      await this.initializeSession();
     }
 
     this.logDebug(
@@ -166,7 +256,7 @@ export class EG4Client {
 
     if ((response.status === 401 || response.status === 403) && retryAuth) {
       this.logDebug('Session rejected; re-authenticating once.');
-      await this.login();
+      await this.initializeSession();
       return this.postForm<T>(path, form, false);
     }
 
@@ -197,13 +287,30 @@ export class EG4Client {
       Referer: `${this.baseUrl}/WManage/`,
     };
 
+    this.applyCookieHeader(headers, authenticated);
+    return headers;
+  }
+
+  private browserHeaders(authenticated: boolean): HeadersInit {
+    const headers: Record<string, string> = {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'User-Agent': `homebridge-eg4/${PLUGIN_VERSION} demo-discovery`,
+      Referer: `${this.baseUrl}/WManage/`,
+    };
+
+    this.applyCookieHeader(headers, authenticated);
+    return headers;
+  }
+
+  private applyCookieHeader(
+    headers: Record<string, string>,
+    authenticated: boolean,
+  ): void {
     if (authenticated && this.cookies.size > 0) {
       headers.Cookie = [...this.cookies.entries()]
         .map(([name, value]) => `${name}=${value}`)
         .join('; ');
     }
-
-    return headers;
   }
 
   private captureCookies(response: Response): void {

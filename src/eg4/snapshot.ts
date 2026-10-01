@@ -2,6 +2,7 @@ import { EG4Client } from './client.js';
 import {
   EG4Device,
   EG4EnergyInfo,
+  EG4InverterRuntime,
   EG4MidboxRuntime,
   EG4NormalizedMetrics,
   EG4ParallelDevice,
@@ -60,6 +61,46 @@ function selectPrimary(devices: EG4Device[]): EG4Device | undefined {
 
 function selectGridBoss(devices: EG4Device[]): EG4Device | undefined {
   return devices.find(isGridBoss);
+}
+
+interface LogicalSystemCandidate {
+  primary: EG4Device;
+  devices: EG4Device[];
+  parallel: EG4ParallelGroupResponse | null;
+  gridBoss?: EG4Device;
+  identitySeed: string;
+}
+
+function inverterCandidates(devices: EG4Device[]): EG4Device[] {
+  return devices.filter(
+    (device) =>
+      Boolean(device.serialNum) &&
+      !isGridBoss(device) &&
+      looksLikeInverter(device),
+  );
+}
+
+function serialOf(device: EG4Device): string | undefined {
+  return device.serialNum ? String(device.serialNum) : undefined;
+}
+
+function parallelMemberSerials(
+  parallel: EG4ParallelGroupResponse | null,
+): string[] {
+  return (parallel?.devices ?? [])
+    .map((device) => serialOf(device))
+    .filter((serial): serial is string => Boolean(serial))
+    .sort();
+}
+
+function labelForDevice(device: EG4Device): string {
+  const raw = String(
+    device.deviceTypeText ??
+      device.deviceTypeText4APP ??
+      'EG4',
+  ).trim();
+
+  return raw || 'EG4';
 }
 
 async function safeCall<T>(
@@ -122,6 +163,7 @@ function pvPowerFromParallel(
 function buildNormalizedMetrics(
   parallel: EG4ParallelGroupResponse | null,
   midbox: EG4MidboxRuntime | null,
+  inverterRuntime: EG4InverterRuntime | null,
 ): EG4NormalizedMetrics {
   const parallelDevices = parallel?.devices ?? [];
   const system = midbox?.deviceData;
@@ -130,7 +172,10 @@ function buildNormalizedMetrics(
   const parallelSoc = averageDefined(
     parallelDevices.map((device) => numeric(device.soc)),
   );
-  const soc = numeric(system?.soc) ?? parallelSoc;
+  const soc =
+    numeric(system?.soc) ??
+    parallelSoc ??
+    numeric(inverterRuntime?.soc);
 
   const parallelCharge = sumDefined(
     parallelDevices.map((device) => numeric(device.pCharge)),
@@ -138,21 +183,30 @@ function buildNormalizedMetrics(
   const parallelDischarge = sumDefined(
     parallelDevices.map((device) => numeric(device.pDisCharge)),
   );
-  const aggregateBatteryPower = numeric(system?.batPower);
+  const aggregateBatteryPower =
+    numeric(system?.batPower) ??
+    numeric(inverterRuntime?.batPower);
+
+  const directCharge = numeric(inverterRuntime?.pCharge);
+  const directDischarge = numeric(inverterRuntime?.pDisCharge);
 
   const chargePower =
     parallelCharge !== undefined || parallelDischarge !== undefined
       ? Math.max(0, parallelCharge ?? 0)
-      : aggregateBatteryPower !== undefined && aggregateBatteryPower > 0
-        ? aggregateBatteryPower
-        : undefined;
+      : directCharge !== undefined || directDischarge !== undefined
+        ? Math.max(0, directCharge ?? 0)
+        : aggregateBatteryPower !== undefined && aggregateBatteryPower > 0
+          ? aggregateBatteryPower
+          : undefined;
 
   const dischargePower =
     parallelCharge !== undefined || parallelDischarge !== undefined
       ? Math.max(0, parallelDischarge ?? 0)
-      : aggregateBatteryPower !== undefined && aggregateBatteryPower < 0
-        ? Math.abs(aggregateBatteryPower)
-        : undefined;
+      : directCharge !== undefined || directDischarge !== undefined
+        ? Math.max(0, directDischarge ?? 0)
+        : aggregateBatteryPower !== undefined && aggregateBatteryPower < 0
+          ? Math.abs(aggregateBatteryPower)
+          : undefined;
 
   const parallelVoltage = averageDefined(
     parallelDevices.map((device) => {
@@ -161,27 +215,78 @@ function buildNormalizedMetrics(
     }),
   );
   const systemVoltageRaw = numeric(system?.vBat);
+  const directVoltageRaw = numeric(inverterRuntime?.vBat);
   const batteryVoltage =
     systemVoltageRaw !== undefined
       ? systemVoltageRaw / 10
-      : parallelVoltage;
+      : parallelVoltage ??
+        (directVoltageRaw === undefined ? undefined : directVoltageRaw / 10);
+
+  const directSolar =
+    numeric(inverterRuntime?.ppv) ??
+    sumDefined([
+      numeric(inverterRuntime?.ppv1),
+      numeric(inverterRuntime?.ppv2),
+      numeric(inverterRuntime?.ppv3),
+    ]);
 
   const solarPower =
-    numeric(system?.ppv) ?? pvPowerFromParallel(parallelDevices);
+    numeric(system?.ppv) ??
+    pvPowerFromParallel(parallelDevices) ??
+    directSolar;
 
-  const backupLoad =
-    numeric(system?.peps) ??
-    sumDefined(parallelDevices.map((device) => numeric(device.peps)));
-  const nonBackupLoad = numeric(system?.pLoad);
-  const loadPower =
-    backupLoad !== undefined || nonBackupLoad !== undefined
-      ? Math.max(0, (backupLoad ?? 0) + (nonBackupLoad ?? 0))
+  const directImport = numeric(inverterRuntime?.pToUser);
+  const directExport = numeric(inverterRuntime?.pToGrid);
+
+  const systemBackupLoad = numeric(system?.peps);
+  const systemNonBackupLoad = numeric(system?.pLoad);
+  const parallelBackupLoad = sumDefined(
+    parallelDevices.map((device) => numeric(device.peps)),
+  );
+  const directEpsLoad = numeric(inverterRuntime?.peps);
+  const directNonBackupLoad =
+    numeric(inverterRuntime?.pLoad) ??
+    numeric(inverterRuntime?.pload170);
+
+  const directDerivedLoad =
+    inverterRuntime &&
+    (directImport !== undefined ||
+      directExport !== undefined ||
+      solarPower !== undefined ||
+      chargePower !== undefined ||
+      dischargePower !== undefined)
+      ? Math.max(
+          0,
+          (directImport ?? 0) +
+            (solarPower ?? 0) +
+            (dischargePower ?? 0) -
+            (directExport ?? 0) -
+            (chargePower ?? 0),
+        )
       : undefined;
 
-  const gridVoltageRaw = numeric(midboxData?.gridRmsVolt);
+  const loadPower =
+    systemBackupLoad !== undefined || systemNonBackupLoad !== undefined
+      ? Math.max(0, (systemBackupLoad ?? 0) + (systemNonBackupLoad ?? 0))
+      : parallelBackupLoad !== undefined
+        ? Math.max(0, parallelBackupLoad)
+        : directNonBackupLoad !== undefined
+          ? Math.max(0, (directEpsLoad ?? 0) + directNonBackupLoad)
+          : directDerivedLoad ?? directEpsLoad;
+
+  const gridVoltageRaw =
+    numeric(midboxData?.gridRmsVolt) ??
+    numeric(inverterRuntime?.vacr);
   const gridVoltage =
     gridVoltageRaw === undefined ? undefined : gridVoltageRaw / 10;
-  const gridPower = numeric(system?.gridPower);
+
+  const directGridPower =
+    directImport !== undefined || directExport !== undefined
+      ? (directImport ?? 0) - (directExport ?? 0)
+      : undefined;
+  const gridPower =
+    numeric(system?.gridPower) ??
+    directGridPower;
 
   const genVoltageRaw = numeric(midboxData?.genRmsVolt);
   const generatorVoltage =
@@ -205,7 +310,7 @@ function buildNormalizedMetrics(
         (sum, value) => sum + Math.abs(value ?? 0),
         0,
       )
-    : undefined;
+    : numeric(inverterRuntime?.genPower);
 
   const generatorAvailable =
     generatorVoltage !== undefined ||
@@ -219,6 +324,8 @@ function buildNormalizedMetrics(
         aggregateBatteryPower !== undefined ||
         parallelCharge !== undefined ||
         parallelDischarge !== undefined ||
+        directCharge !== undefined ||
+        directDischarge !== undefined ||
         batteryVoltage !== undefined,
       soc:
         soc === undefined
@@ -260,7 +367,7 @@ export async function getSystemSnapshots(
   client: EG4Client,
   log: (message: string) => void = () => undefined,
 ): Promise<EG4SystemSnapshot[]> {
-  const login = await client.login();
+  const login = await client.initializeSession();
   const plantResponse = await client.getPlants();
   const plants = plantResponse.rows?.length
     ? plantResponse.rows
@@ -276,64 +383,186 @@ export async function getSystemSnapshots(
 
     const deviceList = await client.getConfigDevices(plantId);
     const devices = deviceList.rows ?? [];
+    const candidates = inverterCandidates(devices);
 
-    const primaryInverter = selectPrimary(devices);
-    if (!primaryInverter?.serialNum) {
+    if (!candidates.length) {
       log(
-        `No usable inverter/device serial found for plant ${
-          plant.name ?? plantId
-        }.`,
+        `No usable inverter/device serial found for plant ${plant.name ?? plantId}.`,
       );
       continue;
     }
 
-    const parallel = await safeCall<EG4ParallelGroupResponse>(
-      'Parallel topology',
-      () =>
-        client.getParallelGroupDetails(
-          primaryInverter.serialNum as string,
+    const configuredGridBoss = selectGridBoss(devices);
+    const candidateBySerial = new Map(
+      candidates
+        .map((device) => {
+          const serial = serialOf(device);
+          return serial ? [serial, device] as const : null;
+        })
+        .filter(
+          (entry): entry is readonly [string, EG4Device] => entry !== null,
         ),
-      log,
     );
 
-    let gridBoss = selectGridBoss(devices);
+    const logicalSystems: LogicalSystemCandidate[] = [];
+    const claimedSerials = new Set<string>();
+    const seenGroupKeys = new Set<string>();
 
-    if (!gridBoss?.serialNum && parallel?.parallelMidboxSn) {
-      gridBoss = {
-        serialNum: parallel.parallelMidboxSn,
-        deviceType: 9,
-        deviceTypeText: 'Grid Boss',
-      };
+    for (const candidate of candidates) {
+      const serial = serialOf(candidate);
+      if (!serial || claimedSerials.has(serial)) {
+        continue;
+      }
+
+      const parallel = await safeCall<EG4ParallelGroupResponse>(
+        'Parallel topology probe',
+        () => client.getParallelGroupDetails(serial),
+        log,
+      );
+
+      const memberSerials = parallelMemberSerials(parallel);
+
+      if (memberSerials.length > 0) {
+        const groupKey = memberSerials.join('|');
+
+        if (seenGroupKeys.has(groupKey)) {
+          for (const memberSerial of memberSerials) {
+            claimedSerials.add(memberSerial);
+          }
+          continue;
+        }
+
+        seenGroupKeys.add(groupKey);
+
+        const groupDevices = memberSerials
+          .map((memberSerial) => candidateBySerial.get(memberSerial))
+          .filter((device): device is EG4Device => Boolean(device));
+
+        const primary =
+          selectPrimary(groupDevices.length ? groupDevices : [candidate]) ??
+          candidate;
+
+        let gridBoss: EG4Device | undefined;
+        if (parallel?.parallelMidboxSn) {
+          gridBoss =
+            devices.find(
+              (device) =>
+                serialOf(device) === String(parallel.parallelMidboxSn),
+            ) ?? {
+              serialNum: parallel.parallelMidboxSn,
+              deviceType: 9,
+              deviceTypeText: 'Grid Boss',
+            };
+        }
+
+        logicalSystems.push({
+          primary,
+          devices: groupDevices.length ? groupDevices : [candidate],
+          parallel,
+          gridBoss,
+          identitySeed:
+            parallel?.parallelMidboxSn
+              ? `midbox:${parallel.parallelMidboxSn}`
+              : `parallel:${groupKey}`,
+        });
+
+        for (const memberSerial of memberSerials) {
+          claimedSerials.add(memberSerial);
+        }
+
+        continue;
+      }
+
+      logicalSystems.push({
+        primary: candidate,
+        devices: [candidate],
+        parallel,
+        identitySeed: `device:${serial}`,
+      });
+      claimedSerials.add(serial);
     }
 
-    const midbox = gridBoss?.serialNum
-      ? await safeCall<EG4MidboxRuntime>(
-          'GridBOSS runtime',
-          () => client.getMidboxRuntime(gridBoss!.serialNum as string),
-          log,
-        )
-      : null;
-
-    const energy = await safeCall<EG4EnergyInfo>(
-      'Parallel energy',
-      () =>
-        client.getParallelEnergyInfo(
-          primaryInverter.serialNum as string,
-        ),
-      log,
+    logicalSystems.sort((a, b) =>
+      a.identitySeed.localeCompare(b.identitySeed),
     );
 
-    snapshots.push({
-      plant,
-      devices,
-      primaryInverter,
-      gridBoss,
-      parallel,
-      midbox,
-      energy,
-      metrics: buildNormalizedMetrics(parallel, midbox),
-    });
+    if (
+      logicalSystems.length === 1 &&
+      !logicalSystems[0]?.gridBoss &&
+      configuredGridBoss
+    ) {
+      logicalSystems[0]!.gridBoss = configuredGridBoss;
+    }
+
+    const multipleSystemsInPlant = logicalSystems.length > 1;
+
+    for (const [systemIndex, logicalSystem] of logicalSystems.entries()) {
+      const primarySerial = serialOf(logicalSystem.primary);
+      if (!primarySerial) {
+        continue;
+      }
+
+      const gridBoss = logicalSystem.gridBoss;
+      const midbox = gridBoss?.serialNum
+        ? await safeCall<EG4MidboxRuntime>(
+            'GridBOSS runtime probe',
+            () => client.getMidboxRuntime(String(gridBoss.serialNum)),
+            log,
+          )
+        : null;
+
+      const inverterRuntime = !gridBoss?.serialNum
+        ? await safeCall<EG4InverterRuntime>(
+            'Direct inverter runtime probe',
+            () => client.getInverterRuntime(primarySerial),
+            log,
+          )
+        : null;
+
+      const parallelEnergy = logicalSystem.parallel?.devices?.length
+        ? await safeCall<EG4EnergyInfo>(
+            'Parallel energy probe',
+            () => client.getParallelEnergyInfo(primarySerial),
+            log,
+          )
+        : null;
+
+      const energy =
+        parallelEnergy ??
+        await safeCall<EG4EnergyInfo>(
+          'Direct inverter energy probe',
+          () => client.getInverterEnergyInfo(primarySerial),
+          log,
+        );
+
+      const systemId = multipleSystemsInPlant
+        ? `${plantId}:${logicalSystem.identitySeed}`
+        : plantId;
+
+      snapshots.push({
+        plant,
+        systemId,
+        systemLabel: labelForDevice(logicalSystem.primary),
+        systemShortLabel: multipleSystemsInPlant
+          ? String.fromCharCode(65 + systemIndex)
+          : undefined,
+        multipleSystemsInPlant,
+        devices: logicalSystem.devices,
+        primaryInverter: logicalSystem.primary,
+        gridBoss,
+        parallel: logicalSystem.parallel,
+        midbox,
+        inverterRuntime,
+        energy,
+        metrics: buildNormalizedMetrics(
+          logicalSystem.parallel,
+          midbox,
+          inverterRuntime,
+        ),
+      });
+    }
   }
 
   return snapshots;
 }
+

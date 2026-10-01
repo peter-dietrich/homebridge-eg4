@@ -6,6 +6,7 @@ export interface EG4ClientOptions {
   baseUrl?: string;
   allowCustomEndpoint?: boolean;
   allowInsecureLocalEndpoint?: boolean;
+  demoMode?: boolean;
   debug?: (message: string) => void;
 }
 
@@ -73,6 +74,37 @@ export interface EG4ParallelGroupResponse extends JsonObject {
   inverterCount?: number;
   total?: number;
   devices?: EG4ParallelDevice[];
+}
+
+
+export interface EG4InverterRuntime extends JsonObject {
+  success?: boolean;
+  serialNum?: string;
+  fwCode?: string;
+  powerRatingText?: string;
+  lost?: boolean;
+  hasRuntimeData?: boolean;
+  statusText?: string;
+  model?: number | string;
+  modelText?: string;
+  ppv?: number;
+  ppv1?: number;
+  ppv2?: number;
+  ppv3?: number;
+  pCharge?: number;
+  pDisCharge?: number;
+  batPower?: number;
+  soc?: number;
+  vBat?: number;
+  peps?: number;
+  pLoad?: number;
+  pload170?: number;
+  pToGrid?: number;
+  pToUser?: number;
+  vacr?: number;
+  fac?: number;
+  acCouplePower?: number;
+  genPower?: number;
 }
 
 export interface EG4MidboxData extends JsonObject {
@@ -165,11 +197,16 @@ export interface EG4EnergyInfo extends JsonObject {
 
 export interface EG4SystemSnapshot {
   plant: EG4Plant;
+  systemId: string;
+  systemLabel?: string;
+  systemShortLabel?: string;
+  multipleSystemsInPlant: boolean;
   devices: EG4Device[];
   primaryInverter: EG4Device;
   gridBoss?: EG4Device;
   parallel: EG4ParallelGroupResponse | null;
   midbox: EG4MidboxRuntime | null;
+  inverterRuntime: EG4InverterRuntime | null;
   energy: EG4EnergyInfo | null;
   metrics: EG4NormalizedMetrics;
 }

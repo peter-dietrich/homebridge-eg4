@@ -42,8 +42,12 @@ const GENERATOR_FREQUENCY_UUID =
   '6D7C3A0A-1F27-4D6C-A04C-9F7AC4A0E401';
 
 interface EG4AccessoryContext {
+  systemId?: string;
   plantId?: string;
   plantName?: string;
+  systemLabel?: string;
+  systemShortLabel?: string;
+  multipleSystemsInPlant?: boolean;
   role?: string;
 }
 
@@ -69,7 +73,7 @@ function setAccessoryInformation(
     .setCharacteristic(platform.Characteristic.Model, model)
     .setCharacteristic(
       platform.Characteristic.SerialNumber,
-      `EG4-${context.plantId ?? 'system'}-${context.role ?? 'device'}`,
+      `EG4-${context.systemId ?? context.plantId ?? 'system'}-${context.role ?? 'device'}`,
     );
 }
 
@@ -183,6 +187,13 @@ function advertiseDynamicName(
     );
 
   accessory.displayName = name;
+}
+
+
+function snapshotPrefix(snapshot: EG4SystemSnapshot): string {
+  return snapshot.multipleSystemsInPlant && snapshot.systemShortLabel
+    ? `${snapshot.systemShortLabel} `
+    : '';
 }
 
 function compactPower(power: number): string {
@@ -342,11 +353,12 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
 
     const gridPower = snapshot.metrics.grid.power ?? 0;
 
+    const prefix = snapshotPrefix(snapshot);
     const name = !available
-      ? 'Grid N/A'
+      ? `${prefix}Grid N/A`
       : this.connected
-        ? `Grid ${compactPower(gridPower)}`
-        : 'Grid OFF-GRID';
+        ? `${prefix}Grid ${compactPower(gridPower)}`
+        : `${prefix}Grid OFF-GRID`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -595,13 +607,14 @@ export class EG4BatteryAccessory
       this.platform.Characteristic.StatusFault.NO_FAULT,
     );
 
+    const prefix = snapshotPrefix(snapshot);
     const name = !available
-      ? 'Batt N/A'
+      ? `${prefix}Batt N/A`
       : this.charging
-        ? `Batt ${this.soc}% CHG ${compactPower(flows.charge)}`
+        ? `${prefix}Batt ${this.soc}% CHG ${compactPower(flows.charge)}`
         : discharging
-          ? `Batt ${this.soc}% DIS ${compactPower(flows.discharge)}`
-          : `Batt ${this.soc}% IDLE`;
+          ? `${prefix}Batt ${this.soc}% DIS ${compactPower(flows.discharge)}`
+          : `${prefix}Batt ${this.soc}% IDLE`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -797,7 +810,7 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 
     this.updateValues(power, totalEnergy);
     this.todayEnergyCharacteristic.updateValue(todayEnergy);
-    this.updateDynamicName(power, available);
+    this.updateDynamicName(snapshot, power, available);
 
     this.platform.log.info(
       `[EG4 Solar] Power=${power}W ` +
@@ -806,12 +819,14 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
   }
 
   private updateDynamicName(
+    snapshot: EG4SystemSnapshot,
     power: number,
     available: boolean,
   ): void {
+    const prefix = snapshotPrefix(snapshot);
     const name = available
-      ? powerDisplayName('Solar', power, true)
-      : 'Solar N/A';
+      ? powerDisplayName(`${prefix}Solar`, power, true)
+      : `${prefix}Solar N/A`;
 
     if (name === this.lastAdvertisedName) {
       return;
@@ -872,9 +887,10 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     this.updateValues(power, totalEnergy);
     this.todayUsageCharacteristic.updateValue(todayUsage);
 
+    const prefix = snapshotPrefix(snapshot);
     const name = available
-      ? powerDisplayName('Load', power)
-      : 'Load N/A';
+      ? powerDisplayName(`${prefix}Load`, power)
+      : `${prefix}Load N/A`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -1030,13 +1046,14 @@ export class EG4GeneratorAccessory
     this.voltageCharacteristic.updateValue(voltage);
     this.frequencyCharacteristic.updateValue(frequency);
 
+    const prefix = snapshotPrefix(snapshot);
     const name = !available
-      ? 'Gen N/A'
+      ? `${prefix}Gen N/A`
       : this.active
         ? power > 50
-          ? `Gen ${compactPower(power)}`
-          : 'Gen ON'
-        : 'Gen OFF';
+          ? `${prefix}Gen ${compactPower(power)}`
+          : `${prefix}Gen ON`
+        : `${prefix}Gen OFF`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;

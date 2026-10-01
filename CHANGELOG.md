@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 0.6.0 - Direct inverter fallback and multi-system plants
+
+### Added
+- Direct inverter runtime fallback for systems where parallel/GridBOSS telemetry is unavailable.
+- Direct inverter energy fallback when parallel energy data is unavailable.
+- Logical-system discovery that groups reported parallel inverters while separating independent electrical systems that share one EG4 Monitor plant.
+- Compact A/B/C HomeKit prefixes for multiple independent systems under one Monitor plant.
+- Development-only public EG4 demo mode for end-to-end Homebridge and Apple Home validation.
+- Sanitized topology fixtures and automated regression tests for parallel 18KPV + GridBOSS and two-system demo topologies.
+- CI execution of topology regression tests on supported Node.js versions.
+
+### Changed
+- House/system load on direct-inverter systems can be derived from grid import/export, solar, and battery charge/discharge when no explicit whole-home load field is available.
+- Optional topology/capability probes are treated as normal fallback discovery rather than user-facing operational warnings.
+- Stale HomeKit accessories are explicitly removed when logical systems are no longer discovered.
+- Single logical systems preserve the existing five-accessory HomeKit identity; multiple independent systems receive separate accessory sets.
+
+### Validation
+- Existing two-inverter 18KPV + GridBOSS installation regression-tested successfully with the normal five-tile Apple Home layout.
+- EG4 public demo validated standalone 18KPV and FlexBOSS21 direct-runtime telemetry end-to-end through Homebridge and Apple Home.
+- EG4 public demo validated two independent systems under one Monitor plant as separate A/B five-accessory sets.
+
+### Notes
+- Public demo validation confirms the current EG4 web API behavior but does not guarantee identical behavior on every inverter or firmware version.
+- The public EG4 demo mode remains development-only and is intentionally omitted from the standard Homebridge configuration schema.
+
 ## 0.5.0 - Flexible topology and configuration
 
 ### Added
