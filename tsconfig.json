@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["DOM", "ES2022"],
+    "lib": [
+      "DOM",
+      "ES2022"
+    ],
     "rootDir": "src",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -15,5 +18,11 @@
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/scripts/**/*.ts",
+    "src/eg4/sanitize.ts"
+  ]
 }
