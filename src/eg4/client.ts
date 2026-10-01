@@ -9,7 +9,11 @@ import {
   JsonObject,
 } from './types.js';
 
-import { DEFAULT_BASE_URL } from '../settings.js';
+import {
+  ALLOWED_EG4_HOSTS,
+  DEFAULT_BASE_URL,
+  PLUGIN_VERSION,
+} from '../settings.js';
 
 export class EG4Error extends Error {}
 export class EG4AuthenticationError extends EG4Error {}
@@ -18,7 +22,6 @@ export class EG4ApiError extends EG4Error {}
 interface ResponseDiagnostic {
   status: number;
   contentType: string;
-  bodySample: string;
 }
 
 export class EG4Client {
@@ -34,7 +37,7 @@ export class EG4Client {
   constructor(options: EG4ClientOptions) {
     this.username = options.username;
     this.password = options.password;
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.baseUrl = this.validateBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
     this.debug = options.debug;
   }
 
@@ -171,15 +174,8 @@ export class EG4Client {
     }
 
     if ('success' in body && body.success === false) {
-      const message =
-        typeof body.message === 'string'
-          ? body.message
-          : typeof body.msg === 'string'
-            ? body.msg
-            : 'no message supplied';
-
       throw new EG4ApiError(
-        `EG4 API reported failure for ${path}: ${message}`,
+        `EG4 API reported failure for ${path}.`,
       );
     }
 
@@ -190,7 +186,7 @@ export class EG4Client {
     const headers: Record<string, string> = {
       Accept: 'application/json, text/javascript, */*; q=0.01',
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      'User-Agent': 'homebridge-eg4/0.2.1-dev',
+      'User-Agent': `homebridge-eg4/${PLUGIN_VERSION}`,
       'X-Requested-With': 'XMLHttpRequest',
       Origin: this.baseUrl,
       Referer: `${this.baseUrl}/WManage/`,
@@ -251,26 +247,49 @@ export class EG4Client {
 
       this.logDebug(
         `${path} returned non-JSON: HTTP=${diagnostic.status} ` +
-        `contentType="${diagnostic.contentType}" sample="${diagnostic.bodySample}"`,
+        `contentType="${diagnostic.contentType}"`,
       );
 
       throw new EG4ApiError(
         `Expected JSON from EG4 for ${path} but received ` +
-        `HTTP ${diagnostic.status} ${diagnostic.contentType || '(unknown content type)'}. ` +
-        `Body sample: ${diagnostic.bodySample}`,
+        `HTTP ${diagnostic.status} ${diagnostic.contentType || '(unknown content type)'}.`,
       );
     }
   }
 
-  private makeDiagnostic(response: Response, body: string): ResponseDiagnostic {
+  private makeDiagnostic(response: Response, _body: string): ResponseDiagnostic {
     return {
       status: response.status,
       contentType: response.headers.get('content-type') ?? '',
-      bodySample: body
-        .slice(0, 240)
-        .replace(/\s+/g, ' ')
-        .replace(/(account|password)=([^&\s]+)/gi, '$1=[REDACTED]'),
     };
+  }
+
+  private validateBaseUrl(value: string): string {
+    let parsed: URL;
+
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new EG4ApiError('EG4 Monitor URL is invalid.');
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new EG4ApiError('EG4 Monitor URL must use HTTPS.');
+    }
+
+    if (!ALLOWED_EG4_HOSTS.has(parsed.hostname.toLowerCase())) {
+      throw new EG4ApiError(
+        `Refusing to send EG4 credentials to unapproved host "${parsed.hostname}".`,
+      );
+    }
+
+    parsed.username = '';
+    parsed.password = '';
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = '';
+
+    return parsed.toString().replace(/\/+$/, '');
   }
 
   private maskSuffix(value: string): string {
