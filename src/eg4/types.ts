@@ -75,6 +75,37 @@ export interface EG4ParallelGroupResponse extends JsonObject {
   devices?: EG4ParallelDevice[];
 }
 
+
+export interface EG4InverterRuntime extends JsonObject {
+  success?: boolean;
+  serialNum?: string;
+  fwCode?: string;
+  powerRatingText?: string;
+  lost?: boolean;
+  hasRuntimeData?: boolean;
+  statusText?: string;
+  model?: number | string;
+  modelText?: string;
+  ppv?: number;
+  ppv1?: number;
+  ppv2?: number;
+  ppv3?: number;
+  pCharge?: number;
+  pDisCharge?: number;
+  batPower?: number;
+  soc?: number;
+  vBat?: number;
+  peps?: number;
+  pLoad?: number;
+  pload170?: number;
+  pToGrid?: number;
+  pToUser?: number;
+  vacr?: number;
+  fac?: number;
+  acCouplePower?: number;
+  genPower?: number;
+}
+
 export interface EG4MidboxData extends JsonObject {
   gridRmsVolt?: number;
   upsRmsVolt?: number;
@@ -170,6 +201,7 @@ export interface EG4SystemSnapshot {
   gridBoss?: EG4Device;
   parallel: EG4ParallelGroupResponse | null;
   midbox: EG4MidboxRuntime | null;
+  inverterRuntime: EG4InverterRuntime | null;
   energy: EG4EnergyInfo | null;
   metrics: EG4NormalizedMetrics;
 }
