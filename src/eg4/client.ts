@@ -10,8 +10,8 @@ import {
 } from './types.js';
 
 import {
-  ALLOWED_EG4_HOSTS,
   DEFAULT_BASE_URL,
+  OFFICIAL_EG4_HOST,
   PLUGIN_VERSION,
 } from '../settings.js';
 
@@ -28,6 +28,8 @@ export class EG4Client {
   private readonly username: string;
   private readonly password: string;
   private readonly baseUrl: string;
+  private readonly allowCustomEndpoint: boolean;
+  private readonly allowInsecureLocalEndpoint: boolean;
   private readonly debug?: (message: string) => void;
 
   // Native fetch() does not maintain browser cookies for us, so keep a small
@@ -37,6 +39,9 @@ export class EG4Client {
   constructor(options: EG4ClientOptions) {
     this.username = options.username;
     this.password = options.password;
+    this.allowCustomEndpoint = options.allowCustomEndpoint ?? false;
+    this.allowInsecureLocalEndpoint =
+      options.allowInsecureLocalEndpoint ?? false;
     this.baseUrl = this.validateBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
     this.debug = options.debug;
   }
@@ -273,19 +278,30 @@ export class EG4Client {
       throw new EG4ApiError('EG4 Monitor URL is invalid.');
     }
 
-    if (parsed.protocol !== 'https:') {
-      throw new EG4ApiError('EG4 Monitor URL must use HTTPS.');
-    }
+    const hostname = parsed.hostname.toLowerCase();
+    const isOfficial = hostname === OFFICIAL_EG4_HOST;
 
-    if (!ALLOWED_EG4_HOSTS.has(parsed.hostname.toLowerCase())) {
+    if (!isOfficial && !this.allowCustomEndpoint) {
       throw new EG4ApiError(
-        `Refusing to send EG4 credentials to unapproved host "${parsed.hostname}".`,
+        `Custom EG4 endpoint "${hostname}" requires explicit opt-in.`,
       );
     }
 
-    if (parsed.port && parsed.port !== '443') {
+    if (parsed.protocol !== 'https:') {
+      const isLocalHttp =
+        this.allowInsecureLocalEndpoint &&
+        this.isPrivateOrLoopbackHost(hostname);
+
+      if (!isLocalHttp) {
+        throw new EG4ApiError(
+          'EG4 Monitor URL must use HTTPS. Plain HTTP is allowed only for explicitly enabled private/loopback endpoints.',
+        );
+      }
+    }
+
+    if (isOfficial && parsed.port && parsed.port !== '443') {
       throw new EG4ApiError(
-        'EG4 Monitor URL must use the standard HTTPS port.',
+        'The official EG4 Monitor URL must use the standard HTTPS port.',
       );
     }
 
@@ -293,9 +309,38 @@ export class EG4Client {
     parsed.password = '';
     parsed.hash = '';
     parsed.search = '';
-    parsed.pathname = '';
+
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    parsed.pathname =
+      pathname && pathname !== '/'
+        ? pathname
+        : '';
 
     return parsed.toString().replace(/\/+$/, '');
+  }
+
+  private isPrivateOrLoopbackHost(hostname: string): boolean {
+    if (hostname === 'localhost' || hostname === '::1') {
+      return true;
+    }
+
+    if (/^127\./.test(hostname) || /^10\./.test(hostname)) {
+      return true;
+    }
+
+    const match172 = hostname.match(/^172\.(\d{1,3})\./);
+    if (match172) {
+      const secondOctet = Number(match172[1]);
+      if (secondOctet >= 16 && secondOctet <= 31) {
+        return true;
+      }
+    }
+
+    if (/^192\.168\./.test(hostname)) {
+      return true;
+    }
+
+    return hostname.endsWith('.local');
   }
 
   private maskSuffix(value: string): string {
