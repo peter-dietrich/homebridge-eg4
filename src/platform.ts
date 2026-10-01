@@ -28,6 +28,7 @@ interface EG4PlatformConfig extends PlatformConfig {
   allowCustomEndpoint?: boolean;
   allowInsecureLocalEndpoint?: boolean;
   debugApi?: boolean;
+  demoMode?: boolean;
   pollInterval?: number;
   showBattery?: boolean;
   showGrid?: boolean;
@@ -133,16 +134,27 @@ export class EG4Platform implements DynamicPlatformPlugin {
   }
 
   private async start(): Promise<void> {
-    if (!this.config.username || !this.config.password) {
+    const demoMode =
+      this.config.demoMode === true ||
+      process.env.HOMEBRIDGE_EG4_DEMO === '1';
+
+    if (!demoMode && (!this.config.username || !this.config.password)) {
       this.log.warn(
         'EG4 username/password are not configured. No API calls will be made.',
       );
       return;
     }
 
+    if (demoMode) {
+      this.log.warn(
+        'EG4 development demo mode is enabled. Using the public EG4 guest demo session instead of account credentials.',
+      );
+    }
+
     this.client = new EG4Client({
-      username: this.config.username,
-      password: this.config.password,
+      username: this.config.username ?? '',
+      password: this.config.password ?? '',
+      demoMode,
       baseUrl:
         this.config.baseUrl ?? DEFAULT_BASE_URL,
       allowCustomEndpoint:
