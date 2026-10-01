@@ -215,10 +215,10 @@ function compactPower(power: number): string {
   const value = Math.max(0, Math.abs(power));
 
   if (value >= 1000) {
-    return `${(value / 1000).toFixed(1)} kW`;
+    return `${(value / 1000).toFixed(1)}kW`;
   }
 
-  return `${Math.round(value)} W`;
+  return `${Math.round(value)}W`;
 }
 
 function powerDisplayName(
@@ -443,8 +443,8 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
         : 0;
 
     const name = this.connected
-      ? `EG4 Grid ${compactPower(gridPower)}`
-      : 'EG4 Grid OFF-GRID';
+      ? `Grid ${compactPower(gridPower)}`
+      : 'Grid OFF-GRID';
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -697,10 +697,10 @@ export class EG4BatteryAccessory
     );
 
     const name = this.charging
-      ? `EG4 Battery ${this.soc}% CHG ${compactPower(flows.charge)}`
+      ? `Batt ${this.soc}% CHG ${compactPower(flows.charge)}`
       : discharging
-        ? `EG4 Battery ${this.soc}% DIS ${compactPower(flows.discharge)}`
-        : `EG4 Battery ${this.soc}% IDLE`;
+        ? `Batt ${this.soc}% DIS ${compactPower(flows.discharge)}`
+        : `Batt ${this.soc}% IDLE`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -908,7 +908,7 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 
   private updateDynamicName(power: number): void {
     const name = powerDisplayName(
-      'EG4 Solar',
+      'Solar',
       power,
       true,
     );
@@ -972,7 +972,7 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     this.todayUsageCharacteristic.updateValue(todayUsage);
 
     const name = powerDisplayName(
-      'EG4 Load',
+      'Load',
       power,
     );
 
@@ -1131,9 +1131,9 @@ export class EG4GeneratorAccessory
 
     const name = this.active
       ? power > 50
-        ? `EG4 Generator ${compactPower(power)}`
-        : 'EG4 Generator ON'
-      : 'EG4 Generator OFF';
+        ? `Gen ${compactPower(power)}`
+        : 'Gen ON'
+      : 'Gen OFF';
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
