@@ -310,7 +310,14 @@ export class EG4Client {
     parsed.hash = '';
     parsed.search = '';
 
-    const pathname = parsed.pathname.replace(/\/+$/, '');
+    let pathname = parsed.pathname.replace(/\/+$/, '');
+
+    // Accept either the service root or a URL ending in /WManage.
+    // Runtime API methods append /WManage themselves.
+    if (/\/WManage$/i.test(pathname)) {
+      pathname = pathname.replace(/\/WManage$/i, '');
+    }
+
     parsed.pathname =
       pathname && pathname !== '/'
         ? pathname
@@ -320,7 +327,11 @@ export class EG4Client {
   }
 
   private isPrivateOrLoopbackHost(hostname: string): boolean {
-    if (hostname === 'localhost' || hostname === '::1') {
+    if (
+      hostname === 'localhost' ||
+      hostname === '::1' ||
+      hostname === '[::1]'
+    ) {
       return true;
     }
 
@@ -337,6 +348,15 @@ export class EG4Client {
     }
 
     if (/^192\.168\./.test(hostname)) {
+      return true;
+    }
+
+    const ipv6 = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (
+      ipv6.startsWith('fc') ||
+      ipv6.startsWith('fd') ||
+      ipv6.startsWith('fe80:')
+    ) {
       return true;
     }
 
