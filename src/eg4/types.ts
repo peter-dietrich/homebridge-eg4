@@ -197,6 +197,10 @@ export interface EG4EnergyInfo extends JsonObject {
 
 export interface EG4SystemSnapshot {
   plant: EG4Plant;
+  systemId: string;
+  systemLabel?: string;
+  systemShortLabel?: string;
+  multipleSystemsInPlant: boolean;
   devices: EG4Device[];
   primaryInverter: EG4Device;
   gridBoss?: EG4Device;
