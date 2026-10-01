@@ -193,7 +193,7 @@ export class EG4Client {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'User-Agent': `homebridge-eg4/${PLUGIN_VERSION}`,
       'X-Requested-With': 'XMLHttpRequest',
-      Origin: this.baseUrl,
+      Origin: new URL(this.baseUrl).origin,
       Referer: `${this.baseUrl}/WManage/`,
     };
 
