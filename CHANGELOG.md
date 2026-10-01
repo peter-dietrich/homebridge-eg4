@@ -1,63 +1,83 @@
 # Changelog
 
-# v0.2.2-dev.1
+All notable changes to this project are documented here.
 
-- Add native HomeKit `ContactSensor` service named `Grid Connection`.
-- Make Grid Connection the primary HomeKit service so Apple Home has a supported tile type.
-- Preserve native Battery service for SOC, Charging State, and Low Battery.
-- Link the Battery service to Grid Connection.
-- Determine grid availability from GridBOSS RMS voltage rather than instantaneous grid watts.
-- Add Status Active / Status Fault to Grid Connection.
-- Extend polling log with GridVoltage and GridConnected.
-- No control/write operations added.
+## 0.4.0 - Release candidate
 
+### Added
+- Five logical HomeKit accessories: Battery, Grid, Solar, Load, and Generator.
+- Dynamic compact tile labels such as `Batt 93% DIS 420W`, `Grid OFF-GRID`, `Solar 1.4kW`, `Load 516W`, and `Gen OFF`.
+- Native HomeKit Battery Level, Charging State, and Low Battery characteristics.
+- GridBOSS generator voltage, frequency, and phase-power status.
+- Daily solar, usage, battery charge, and battery discharge telemetry.
+- Native status characteristics where HomeKit service definitions support them.
+- Security policy, contributor guide, CI, CodeQL, and dependency-update configuration.
 
+### Changed
+- Tile-facing status services use HomeKit Outlet services because Apple Home renders them as useful quick-glance tiles.
+- HomeKit writes to status-only Outlet tiles are intercepted locally and never translated into EG4 control calls.
+- Grid availability is determined from GridBOSS RMS voltage rather than grid watts.
+- Battery charge/discharge direction prefers inverter-level charge/discharge telemetry with aggregate fallback.
+- Runtime version reporting is centralized.
+- npm package metadata and Homebridge configuration schema are prepared for public publication.
+- npm publication uses an explicit file allowlist.
 
-## 0.2.1-dev.1
+### Security
+- EG4 credentials may only be sent over HTTPS to the approved EG4 Monitor host.
+- API error diagnostics no longer include response body samples.
+- Discovery-output redaction covers additional token/session, identity, datalogger, and device identifier fields.
+- Homebridge configuration renders the password as a password field.
+- No analytics, advertising, tracking, or third-party telemetry is included.
 
-- Fix TypeScript build errors introduced by stale `src/eg4/discovery.ts`.
-- Remove obsolete discovery code from compilation.
-- Fix `PlatformAccessory` context typing.
-- Confirm HAP battery service uses `Service.Battery`.
-- Remove placeholder battery-temperature service.
-- Use `ReturnType<typeof setInterval>` for the poll timer.
+### Removed
+- Obsolete single-system accessory implementation.
+- Obsolete v0.2 patch instructions.
 
+## 0.3.6-dev
+- Replaced experimental Switch tiles with Outlet tiles.
+- Added Generator accessory.
+- Added compact dynamic labels and removed spaces before W/kW.
+- Removed the separate Grid Contact Sensor presentation.
 
+## 0.3.5-dev
+- Added richer native status characteristics.
+- Added custom daily-energy, battery-power, battery-voltage, and grid-voltage characteristics.
+- Confirmed Apple Home exposes native Battery and selected native status characteristics while hiding many custom characteristics.
 
-## 0.2.0-dev.1
+## 0.3.4-dev
+- Added dynamic HomeKit accessory naming so live watts/SOC appear in Apple Home tiles.
+- Added writable-looking status tiles whose writes are intercepted locally.
+- Restored Grid status alongside the tile experiment.
 
+## 0.3.3-dev
+- Added dynamic Solar tile naming.
+
+## 0.3.2-dev
+- Experimented with writable-looking Solar status tile behavior to obtain a full Apple Home tile.
+
+## 0.3.1-dev
+- Split the original system accessory into Grid, Battery, Solar, and House Load accessories.
+- Preserved a shared polling snapshot so split accessories do not multiply cloud polling.
+
+## 0.2.2-dev
+- Added native Grid Contact Sensor experiment.
+- Preserved native Battery service for SOC, Charging State, and Low Battery.
+- Determined grid availability from GridBOSS RMS voltage.
+
+## 0.2.1-dev
+- Fixed TypeScript build issues in the early HomeKit implementation.
+- Removed obsolete discovery code from compilation.
+
+## 0.2.0-dev
 - First HomeKit accessory implementation.
-- Use `/WManage/web/config/inverter/list` for authoritative device discovery.
-- Use primary inverter serial for `getParallelGroupDetails`.
-- Use GridBOSS `getMidboxRuntime` as aggregate system source.
-- Use `getInverterEnergyInfoParallel` for aggregate energy totals.
-- Expose native HomeKit battery SOC, charging state, and low-battery status.
-- Log aggregate PV, battery, grid, and backup-load values.
-- Add polling interval configuration.
-- Keep implementation read-only.
+- Added authoritative device discovery, GridBOSS aggregate runtime data, parallel energy totals, polling, and native battery status.
 
+## 0.1.2-dev
+- Added behavior-based device classification and sanitized discovery output.
 
+## 0.1.1-dev
+- Preserved all EG4 login cookies.
+- Added browser-like request headers and sanitized diagnostics.
 
-## 0.1.2-dev.1
-
-- Add behavior-based device classification.
-- Probe inverter runtime first, then GridBOSS/MID runtime when inverter data is absent.
-- Preserve sanitized source device metadata in discovery output.
-- Separate device records into `inverter`, `gridboss`, and `unknown`.
-- Avoid hard-coding any serial-number suffixes.
-- Prepare discovery output for HomeKit mapping in v0.2.
-
-
-## 0.1.1-dev.1
-
-- Preserve all cookies returned by EG4 login instead of only `JSESSIONID`.
-- Add `language=ENGLISH` to login request.
-- Add browser-like AJAX headers used by the EG4 web interface.
-- Add sanitized diagnostics for non-JSON HTTP responses.
-- Log only the final digits of plant/device identifiers.
-- Fall back to `plants[].inverters[]` from the login response if overview discovery fails.
-- Restore `.env.example`, `.gitignore`, and `.npmignore` in the downloadable package.
-
-## 0.1.0-dev.1
-
-- Initial cloud authentication and discovery prototype.
+## 0.1.0-dev
+- Initial EG4 cloud authentication and discovery prototype.
