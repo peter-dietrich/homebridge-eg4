@@ -63,6 +63,65 @@ function selectGridBoss(devices: EG4Device[]): EG4Device | undefined {
   return devices.find(isGridBoss);
 }
 
+interface LogicalSystemCandidate {
+  primary: EG4Device;
+  devices: EG4Device[];
+  parallel: EG4ParallelGroupResponse | null;
+  gridBoss?: EG4Device;
+  identitySeed: string;
+}
+
+function inverterCandidates(devices: EG4Device[]): EG4Device[] {
+  return devices.filter(
+    (device) =>
+      Boolean(device.serialNum) &&
+      !isGridBoss(device) &&
+      looksLikeInverter(device),
+  );
+}
+
+function serialOf(device: EG4Device): string | undefined {
+  return device.serialNum ? String(device.serialNum) : undefined;
+}
+
+function parallelMemberSerials(
+  parallel: EG4ParallelGroupResponse | null,
+): string[] {
+  return (parallel?.devices ?? [])
+    .map((device) => serialOf(device))
+    .filter((serial): serial is string => Boolean(serial))
+    .sort();
+}
+
+function labelForDevice(device: EG4Device): string {
+  const raw = String(
+    device.deviceTypeText ??
+      device.deviceTypeText4APP ??
+      'EG4',
+  ).trim();
+
+  return raw || 'EG4';
+}
+
+function shortLabelForDevice(device: EG4Device): string {
+  const label = labelForDevice(device).toUpperCase();
+
+  if (label.includes('FLEXBOSS21')) {
+    return 'FB21';
+  }
+  if (label.includes('18KPV')) {
+    return '18K';
+  }
+  if (label.includes('12KPV')) {
+    return '12K';
+  }
+  if (label.includes('6000XP')) {
+    return '6KXP';
+  }
+
+  return label.replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'EG4';
+}
+
 async function safeCall<T>(
   label: string,
   fn: () => Promise<T>,
@@ -343,91 +402,172 @@ export async function getSystemSnapshots(
 
     const deviceList = await client.getConfigDevices(plantId);
     const devices = deviceList.rows ?? [];
+    const candidates = inverterCandidates(devices);
 
-    const primaryInverter = selectPrimary(devices);
-    if (!primaryInverter?.serialNum) {
+    if (!candidates.length) {
       log(
-        `No usable inverter/device serial found for plant ${
-          plant.name ?? plantId
-        }.`,
+        `No usable inverter/device serial found for plant ${plant.name ?? plantId}.`,
       );
       continue;
     }
 
-    const parallel = await safeCall<EG4ParallelGroupResponse>(
-      'Parallel topology',
-      () =>
-        client.getParallelGroupDetails(
-          primaryInverter.serialNum as string,
+    const configuredGridBoss = selectGridBoss(devices);
+    const candidateBySerial = new Map(
+      candidates
+        .map((device) => {
+          const serial = serialOf(device);
+          return serial ? [serial, device] as const : null;
+        })
+        .filter(
+          (entry): entry is readonly [string, EG4Device] => entry !== null,
         ),
-      log,
     );
 
-    let gridBoss = selectGridBoss(devices);
+    const logicalSystems: LogicalSystemCandidate[] = [];
+    const claimedSerials = new Set<string>();
+    const seenGroupKeys = new Set<string>();
 
-    if (!gridBoss?.serialNum && parallel?.parallelMidboxSn) {
-      gridBoss = {
-        serialNum: parallel.parallelMidboxSn,
-        deviceType: 9,
-        deviceTypeText: 'Grid Boss',
-      };
-    }
+    for (const candidate of candidates) {
+      const serial = serialOf(candidate);
+      if (!serial || claimedSerials.has(serial)) {
+        continue;
+      }
 
-    const midbox = gridBoss?.serialNum
-      ? await safeCall<EG4MidboxRuntime>(
-          'GridBOSS runtime',
-          () => client.getMidboxRuntime(gridBoss!.serialNum as string),
-          log,
-        )
-      : null;
-
-    const inverterRuntime = !gridBoss?.serialNum
-      ? await safeCall<EG4InverterRuntime>(
-          'Direct inverter runtime',
-          () =>
-            client.getInverterRuntime(
-              primaryInverter.serialNum as string,
-            ),
-          log,
-        )
-      : null;
-
-    const parallelEnergy = await safeCall<EG4EnergyInfo>(
-      'Parallel energy',
-      () =>
-        client.getParallelEnergyInfo(
-          primaryInverter.serialNum as string,
-        ),
-      log,
-    );
-
-    const energy =
-      parallelEnergy ??
-      await safeCall<EG4EnergyInfo>(
-        'Direct inverter energy',
-        () =>
-          client.getInverterEnergyInfo(
-            primaryInverter.serialNum as string,
-          ),
+      const parallel = await safeCall<EG4ParallelGroupResponse>(
+        'Parallel topology probe',
+        () => client.getParallelGroupDetails(serial),
         log,
       );
 
-    snapshots.push({
-      plant,
-      devices,
-      primaryInverter,
-      gridBoss,
-      parallel,
-      midbox,
-      inverterRuntime,
-      energy,
-      metrics: buildNormalizedMetrics(
+      const memberSerials = parallelMemberSerials(parallel);
+
+      if (memberSerials.length > 0) {
+        const groupKey = memberSerials.join('|');
+
+        if (seenGroupKeys.has(groupKey)) {
+          for (const memberSerial of memberSerials) {
+            claimedSerials.add(memberSerial);
+          }
+          continue;
+        }
+
+        seenGroupKeys.add(groupKey);
+
+        const groupDevices = memberSerials
+          .map((memberSerial) => candidateBySerial.get(memberSerial))
+          .filter((device): device is EG4Device => Boolean(device));
+
+        const primary =
+          selectPrimary(groupDevices.length ? groupDevices : [candidate]) ??
+          candidate;
+
+        let gridBoss = configuredGridBoss;
+        if (parallel?.parallelMidboxSn) {
+          gridBoss =
+            devices.find(
+              (device) =>
+                serialOf(device) === String(parallel.parallelMidboxSn),
+            ) ?? {
+              serialNum: parallel.parallelMidboxSn,
+              deviceType: 9,
+              deviceTypeText: 'Grid Boss',
+            };
+        }
+
+        logicalSystems.push({
+          primary,
+          devices: groupDevices.length ? groupDevices : [candidate],
+          parallel,
+          gridBoss,
+          identitySeed:
+            parallel?.parallelMidboxSn
+              ? `midbox:${parallel.parallelMidboxSn}`
+              : `parallel:${groupKey}`,
+        });
+
+        for (const memberSerial of memberSerials) {
+          claimedSerials.add(memberSerial);
+        }
+
+        continue;
+      }
+
+      logicalSystems.push({
+        primary: candidate,
+        devices: [candidate],
         parallel,
+        identitySeed: `device:${serial}`,
+      });
+      claimedSerials.add(serial);
+    }
+
+    const multipleSystemsInPlant = logicalSystems.length > 1;
+
+    for (const logicalSystem of logicalSystems) {
+      const primarySerial = serialOf(logicalSystem.primary);
+      if (!primarySerial) {
+        continue;
+      }
+
+      const gridBoss = logicalSystem.gridBoss;
+      const midbox = gridBoss?.serialNum
+        ? await safeCall<EG4MidboxRuntime>(
+            'GridBOSS runtime probe',
+            () => client.getMidboxRuntime(String(gridBoss.serialNum)),
+            log,
+          )
+        : null;
+
+      const inverterRuntime = !gridBoss?.serialNum
+        ? await safeCall<EG4InverterRuntime>(
+            'Direct inverter runtime probe',
+            () => client.getInverterRuntime(primarySerial),
+            log,
+          )
+        : null;
+
+      const parallelEnergy = logicalSystem.parallel?.devices?.length
+        ? await safeCall<EG4EnergyInfo>(
+            'Parallel energy probe',
+            () => client.getParallelEnergyInfo(primarySerial),
+            log,
+          )
+        : null;
+
+      const energy =
+        parallelEnergy ??
+        await safeCall<EG4EnergyInfo>(
+          'Direct inverter energy probe',
+          () => client.getInverterEnergyInfo(primarySerial),
+          log,
+        );
+
+      const systemId = multipleSystemsInPlant
+        ? `${plantId}:${logicalSystem.identitySeed}`
+        : plantId;
+
+      snapshots.push({
+        plant,
+        systemId,
+        systemLabel: labelForDevice(logicalSystem.primary),
+        systemShortLabel: shortLabelForDevice(logicalSystem.primary),
+        multipleSystemsInPlant,
+        devices: logicalSystem.devices,
+        primaryInverter: logicalSystem.primary,
+        gridBoss,
+        parallel: logicalSystem.parallel,
         midbox,
         inverterRuntime,
-      ),
-    });
+        energy,
+        metrics: buildNormalizedMetrics(
+          logicalSystem.parallel,
+          midbox,
+          inverterRuntime,
+        ),
+      });
+    }
   }
 
   return snapshots;
 }
+
