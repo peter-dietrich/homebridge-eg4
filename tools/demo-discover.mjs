@@ -257,22 +257,51 @@ function normalize(parallel, midbox, inverterRuntime) {
     ]))) ??
     directSolar;
 
-  const backupLoad = numberOrUndefined(system.peps) ??
-    sumDefined(devices.map((d) => numberOrUndefined(d.peps))) ??
-    numberOrUndefined(inverterRuntime?.peps);
-  const nonBackupLoad = numberOrUndefined(system.pLoad) ??
+  const systemBackupLoad = numberOrUndefined(system.peps);
+  const systemNonBackupLoad = numberOrUndefined(system.pLoad);
+  const parallelBackupLoad = sumDefined(
+    devices.map((d) => numberOrUndefined(d.peps)),
+  );
+  const directEpsLoad = numberOrUndefined(inverterRuntime?.peps);
+  const directNonBackupLoad =
     numberOrUndefined(inverterRuntime?.pLoad) ??
     numberOrUndefined(inverterRuntime?.pload170);
-  const load = backupLoad !== undefined || nonBackupLoad !== undefined
-    ? Math.max(0, (backupLoad ?? 0) + (nonBackupLoad ?? 0))
-    : undefined;
+
+  const directImport = numberOrUndefined(inverterRuntime?.pToUser);
+  const directExport = numberOrUndefined(inverterRuntime?.pToGrid);
+  const pCharge = numberOrUndefined(inverterRuntime?.pCharge);
+  const pDisCharge = numberOrUndefined(inverterRuntime?.pDisCharge);
+
+  const derivedLoad =
+    inverterRuntime &&
+    (directImport !== undefined ||
+      directExport !== undefined ||
+      solar !== undefined ||
+      pCharge !== undefined ||
+      pDisCharge !== undefined)
+      ? Math.max(
+          0,
+          (directImport ?? 0) +
+            (solar ?? 0) +
+            (pDisCharge ?? 0) -
+            (directExport ?? 0) -
+            (pCharge ?? 0),
+        )
+      : undefined;
+
+  const load =
+    systemBackupLoad !== undefined || systemNonBackupLoad !== undefined
+      ? Math.max(0, (systemBackupLoad ?? 0) + (systemNonBackupLoad ?? 0))
+      : parallelBackupLoad !== undefined
+        ? Math.max(0, parallelBackupLoad)
+        : directNonBackupLoad !== undefined
+          ? Math.max(0, (directEpsLoad ?? 0) + directNonBackupLoad)
+          : derivedLoad ?? directEpsLoad;
 
   const gridVoltageRaw = numberOrUndefined(mid.gridRmsVolt) ??
     numberOrUndefined(inverterRuntime?.vacr);
   const gridVoltage = gridVoltageRaw === undefined ? undefined : gridVoltageRaw / 10;
 
-  const directImport = numberOrUndefined(inverterRuntime?.pToUser);
-  const directExport = numberOrUndefined(inverterRuntime?.pToGrid);
   const directGridPower = directImport !== undefined || directExport !== undefined
     ? (directImport ?? 0) - (directExport ?? 0)
     : undefined;
@@ -288,8 +317,6 @@ function normalize(parallel, midbox, inverterRuntime) {
     ? genPowerParts.reduce((sum, v) => sum + Math.abs(v ?? 0), 0)
     : numberOrUndefined(inverterRuntime?.genPower);
 
-  const pCharge = numberOrUndefined(inverterRuntime?.pCharge);
-  const pDisCharge = numberOrUndefined(inverterRuntime?.pDisCharge);
   const vBatRaw = numberOrUndefined(inverterRuntime?.vBat);
 
   return {
