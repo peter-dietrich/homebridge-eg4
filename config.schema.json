@@ -2,7 +2,7 @@
   "pluginAlias": "EG4",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "### Homebridge EG4\nRead-only monitoring for EG4 solar and storage systems. Choose which Apple Home accessories you want to expose, even when a subsystem is currently inactive.",
+  "headerDisplay": "Read-only monitoring for EG4 solar and storage systems. Choose which Apple Home accessories you want to expose, even when a subsystem is currently inactive.",
   "footerDisplay": "**Security:** The official EG4 Monitor endpoint is used by default. Custom endpoints require explicit opt-in. Plain HTTP is permitted only for explicitly enabled private/loopback hosts. This plugin does not send EG4 control commands.",
   "schema": {
     "type": "object",
