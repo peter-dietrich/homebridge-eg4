@@ -1,5 +1,11 @@
 # homebridge-eg4
 
+[![npm version](https://img.shields.io/npm/v/homebridge-eg4.svg)](https://www.npmjs.com/package/homebridge-eg4)
+[![CI](https://github.com/peter-dietrich/homebridge-eg4/actions/workflows/ci.yml/badge.svg)](https://github.com/peter-dietrich/homebridge-eg4/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/peter-dietrich/homebridge-eg4/actions/workflows/codeql.yml/badge.svg)](https://github.com/peter-dietrich/homebridge-eg4/actions/workflows/codeql.yml)
+[![license](https://img.shields.io/github/license/peter-dietrich/homebridge-eg4.svg)](LICENSE)
+[![node](https://img.shields.io/node/v/homebridge-eg4.svg)](package.json)
+
 Unofficial, read-only Homebridge plugin for EG4 solar, battery, grid, load, and generator status using an EG4 Monitor-compatible interface.
 
 > **Current release:** 0.5.0. This project is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
@@ -193,6 +199,32 @@ Equivalent JSON:
 | `debugApi` | false | Endpoint-level diagnostics without response bodies or credentials |
 
 Turning a tile off causes the plugin to unregister the corresponding cached HomeKit accessory on the next successful refresh.
+
+## Support
+
+Before opening an issue, check the [Troubleshooting](#troubleshooting) section and search existing issues.
+
+For reproducible bugs, use the GitHub bug-report template and include:
+
+- plugin, Homebridge, and Node.js versions
+- a short description of the EG4 topology
+- the expected and observed behavior
+- only the relevant Homebridge log lines
+
+Do **not** post passwords, cookies, tokens, raw HAR captures, serial numbers, plant IDs, or other sensitive identifiers.
+
+Feature and compatibility requests are welcome through the feature-request template, particularly for EG4 topologies that have not yet been tested with real hardware.
+
+See [SUPPORT.md](SUPPORT.md) for support scope and reporting guidance.
+
+## Known limitations
+
+- The EG4 Monitor interface used by this plugin is undocumented/private and can change without notice.
+- Compatibility beyond the fully tested 18KPV + GridBOSS topology is currently best-effort and may depend on which telemetry fields the EG4 API exposes for a given installation.
+- Grid and Generator fallbacks are more limited than Battery, Solar, and Load fallbacks on systems without GridBOSS telemetry.
+- Apple Home controls which HomeKit characteristics are visible in its UI. Some watt, voltage, frequency, and energy characteristics may be available over HAP but not shown directly in the Home app.
+- Status tiles use HomeKit Outlet services for Apple Home presentation. They are intentionally read-only at the EG4 side; apparent writes are intercepted locally and the observed state is restored.
+- This plugin does not provide local-LAN inverter control or equipment-control features.
 
 ## Troubleshooting
 
