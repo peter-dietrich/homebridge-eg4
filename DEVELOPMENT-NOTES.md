@@ -94,6 +94,27 @@ This semantic distinction is required:
 
 Do not infer OFF from missing fields.
 
+## Public demo topology discovery
+
+The repository includes a development-only utility for exercising the public EG4 demo plant without using a personal EG4 account:
+
+```bash
+node tools/demo-discover.mjs
+```
+
+The script:
+
+- establishes the public EG4 guest/demo session
+- enumerates visible demo plants and devices
+- probes the same read-only parallel, midbox, and energy endpoints used by the plugin
+- applies the current device-selection and telemetry-normalization rules
+- prints a sanitized compatibility report to stdout
+- never sends EG4 control commands
+
+The tool intentionally lives outside `src/` and is not included in the npm `files` allowlist, so it is not shipped with the production package.
+
+Use the report to identify additional inverter/topology combinations and telemetry-field differences before changing production compatibility logic. Do not treat public demo telemetry as a substitute for testing on real customer hardware.
+
 ## Testing new EG4 topologies
 
 A useful topology report includes:
