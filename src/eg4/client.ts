@@ -44,6 +44,7 @@ export class EG4Client {
     this.allowCustomEndpoint = options.allowCustomEndpoint ?? false;
     this.allowInsecureLocalEndpoint =
       options.allowInsecureLocalEndpoint ?? false;
+    this.sessionMode = options.demoMode ? 'demo' : 'login';
     this.baseUrl = this.validateBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
     this.debug = options.debug;
   }
