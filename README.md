@@ -2,7 +2,7 @@
 
 Unofficial, read-only Homebridge plugin for EG4 solar, battery, GridBOSS, load, and generator status using the EG4 Monitor cloud interface.
 
-> **Release candidate:** 0.4.0. The project is being prepared for its first public npm release. It is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
+> **Current release:** 0.4.1. It is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
 
 ## What it does
 
@@ -45,7 +45,6 @@ Apple Home currently renders the quick-glance status tiles as Outlet services. T
 - Session cookies are kept in memory only.
 - The plugin contains no analytics, advertising, usage tracking, or third-party telemetry.
 - API diagnostics intentionally avoid logging response bodies, passwords, session cookies, or tokens.
-- The optional discovery tool sanitizes common personal fields and masks device identifiers before writing its report.
 - `.env`, logs, discovery reports, build output, and local package archives are excluded from source control/package publication.
 
 Homebridge stores plugin configuration, including credentials, according to the security of your Homebridge installation. Protect access to Homebridge UI, its configuration directory, and host operating system.
@@ -190,15 +189,9 @@ npm install
 npm run build
 ```
 
-For local discovery testing:
-
-```bash
-cp .env.example .env
-# edit .env locally
-npm run discover
-```
-
 Never commit `.env`, HAR captures, cookies, session headers, or unsanitized EG4 API data.
+
+Development-only diagnostic helpers are intentionally excluded from the published npm build so the installed Homebridge plugin does not access environment files or write diagnostic reports.
 
 A development Homebridge host can update from GitHub with:
 
@@ -224,7 +217,7 @@ The package is structured for npm/Homebridge discovery:
 - builds as ESM for Homebridge 2
 - npm publication is restricted to an explicit file allowlist
 
-Publishing to npm is a separate maintainer action and should only be done after a clean build/test of the release candidate.
+The current release is published on npm. New releases should be published only after a clean build/test and `npm pack --dry-run` review.
 
 ## License
 
