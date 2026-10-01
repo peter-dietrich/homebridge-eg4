@@ -26,6 +26,28 @@ Typical Apple Home tiles include:
 
 Apple Home decides which HomeKit characteristics it renders. Native Battery characteristics are shown especially well; many custom watt/voltage/kWh characteristics remain available over HAP even when Apple's Home app does not display them directly.
 
+## Screenshots
+
+### Homebridge configuration
+
+The Homebridge settings UI groups account/connection settings, Apple Home accessory selection, and advanced endpoint controls.
+
+![Homebridge EG4 configuration](docs/images/homebridge-eg4_homebridge-UI-0.5.0.png)
+
+### Apple Home overview
+
+Battery, Generator, Grid, Load, and Solar appear as quick-glance status tiles in Apple Home.
+
+![Apple Home EG4 status tiles](docs/images/homebridge-eg4_apple-home-UI-v0.5.0.png)
+
+### Battery details
+
+The Battery accessory also exposes native HomeKit battery characteristics such as state of charge and charging status.
+
+![Apple Home EG4 battery details](docs/images/homebridge-eg4_apple-home-UI-detail-0.5.0.png)
+
+See [docs/README.md](docs/README.md) for additional notes about the screenshots and UI behavior.
+
 ## Accessory selection and missing data
 
 The Homebridge settings UI lets you independently enable or disable Battery, Grid, Solar, Load, and Generator accessories.
