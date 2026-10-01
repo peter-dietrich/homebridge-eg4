@@ -44,7 +44,8 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
