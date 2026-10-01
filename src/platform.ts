@@ -19,7 +19,7 @@ import {
 
 import { EG4Client } from './eg4/client.js';
 import { getSystemSnapshots } from './eg4/snapshot.js';
-import { DEFAULT_BASE_URL } from './settings.js';
+import { DEFAULT_BASE_URL, PLUGIN_VERSION } from './settings.js';
 
 interface EG4PlatformConfig extends PlatformConfig {
   username?: string;
@@ -93,7 +93,7 @@ export class EG4Platform implements DynamicPlatformPlugin {
     this.Characteristic = this.api.hap.Characteristic;
 
     this.log.info(
-      'Initializing EG4 platform v0.3.6-dev.',
+      `Initializing EG4 platform v${PLUGIN_VERSION}.`,
     );
 
     this.api.on('didFinishLaunching', () => {
