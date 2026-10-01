@@ -2,6 +2,7 @@ import {
   EG4ClientOptions,
   EG4DeviceListResponse,
   EG4EnergyInfo,
+  EG4InverterRuntime,
   EG4LoginResponse,
   EG4MidboxRuntime,
   EG4ParallelGroupResponse,
@@ -195,6 +196,21 @@ export class EG4Client {
   ): Promise<EG4ParallelGroupResponse> {
     return this.postForm<EG4ParallelGroupResponse>(
       '/WManage/api/inverterOverview/getParallelGroupDetails',
+      { serialNum },
+    );
+  }
+
+
+  async getInverterRuntime(serialNum: string): Promise<EG4InverterRuntime> {
+    return this.postForm<EG4InverterRuntime>(
+      '/WManage/api/inverter/getInverterRuntime',
+      { serialNum },
+    );
+  }
+
+  async getInverterEnergyInfo(serialNum: string): Promise<EG4EnergyInfo> {
+    return this.postForm<EG4EnergyInfo>(
+      '/WManage/api/inverter/getInverterEnergyInfo',
       { serialNum },
     );
   }
