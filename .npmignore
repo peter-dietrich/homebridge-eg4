@@ -1,6 +1,14 @@
 src/
 test/
+coverage/
+.github/
 .env
 .env.*
 *.log
+*.har
+*.har.gz
+*.pcap
+*.tgz
 eg4-discovery*.json
+DEVELOPMENT-NOTES.md
+CONTRIBUTING.md
