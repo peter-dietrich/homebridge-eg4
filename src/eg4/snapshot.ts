@@ -461,7 +461,7 @@ export async function getSystemSnapshots(
           selectPrimary(groupDevices.length ? groupDevices : [candidate]) ??
           candidate;
 
-        let gridBoss = configuredGridBoss;
+        let gridBoss: EG4Device | undefined;
         if (parallel?.parallelMidboxSn) {
           gridBoss =
             devices.find(
@@ -499,6 +499,14 @@ export async function getSystemSnapshots(
         identitySeed: `device:${serial}`,
       });
       claimedSerials.add(serial);
+    }
+
+    if (
+      logicalSystems.length === 1 &&
+      !logicalSystems[0]?.gridBoss &&
+      configuredGridBoss
+    ) {
+      logicalSystems[0]!.gridBoss = configuredGridBoss;
     }
 
     const multipleSystemsInPlant = logicalSystems.length > 1;
