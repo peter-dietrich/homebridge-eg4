@@ -97,7 +97,15 @@ export class EG4Platform implements DynamicPlatformPlugin {
     );
 
     this.api.on('didFinishLaunching', () => {
-      void this.start();
+      void this.start().catch((error) => {
+        this.log.error(
+          `EG4 startup failed: ${
+            error instanceof Error
+              ? error.message
+              : String(error)
+          }`,
+        );
+      });
     });
 
     this.api.on('shutdown', () => {
