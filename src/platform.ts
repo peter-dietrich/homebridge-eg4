@@ -25,8 +25,16 @@ interface EG4PlatformConfig extends PlatformConfig {
   username?: string;
   password?: string;
   baseUrl?: string;
+  allowCustomEndpoint?: boolean;
+  allowInsecureLocalEndpoint?: boolean;
   debugApi?: boolean;
   pollInterval?: number;
+  showBattery?: boolean;
+  showGrid?: boolean;
+  showSolar?: boolean;
+  showLoad?: boolean;
+  showGenerator?: boolean;
+  missingDataBehavior?: 'show-na' | 'hide';
 }
 
 type AccessoryRole =
@@ -137,6 +145,10 @@ export class EG4Platform implements DynamicPlatformPlugin {
       password: this.config.password,
       baseUrl:
         this.config.baseUrl ?? DEFAULT_BASE_URL,
+      allowCustomEndpoint:
+        this.config.allowCustomEndpoint ?? false,
+      allowInsecureLocalEndpoint:
+        this.config.allowInsecureLocalEndpoint ?? false,
       debug: this.config.debugApi
         ? (message) => this.log.debug(message)
         : undefined,
@@ -179,6 +191,24 @@ export class EG4Platform implements DynamicPlatformPlugin {
         this.removeLegacySystemAccessory(plantId);
 
         for (const definition of ACCESSORY_DEFINITIONS) {
+          if (!this.isRoleEnabled(definition.role)) {
+            this.removeAccessory(plantId, definition.role);
+            continue;
+          }
+
+          const dataAvailable = this.hasDataForRole(
+            snapshot,
+            definition.role,
+          );
+
+          if (
+            !dataAvailable &&
+            this.config.missingDataBehavior === 'hide'
+          ) {
+            this.removeAccessory(plantId, definition.role);
+            continue;
+          }
+
           const accessory = this.ensureAccessory(
             plantId,
             snapshot.plant.name ?? 'EG4',
@@ -202,6 +232,61 @@ export class EG4Platform implements DynamicPlatformPlugin {
         }`,
       );
     }
+  }
+
+  private isRoleEnabled(role: AccessoryRole): boolean {
+    switch (role) {
+      case 'battery':
+        return this.config.showBattery ?? true;
+      case 'grid':
+        return this.config.showGrid ?? true;
+      case 'solar':
+        return this.config.showSolar ?? true;
+      case 'load':
+        return this.config.showLoad ?? true;
+      case 'generator':
+        return this.config.showGenerator ?? true;
+    }
+  }
+
+  private hasDataForRole(
+    snapshot: Awaited<ReturnType<typeof getSystemSnapshots>>[number],
+    role: AccessoryRole,
+  ): boolean {
+    return snapshot.metrics[role].available;
+  }
+
+  private removeAccessory(
+    plantId: string,
+    role: AccessoryRole,
+  ): void {
+    const uuid = this.api.hap.uuid.generate(
+      `eg4-${role}-${plantId}`,
+    );
+
+    const accessory = this.accessories.find(
+      (candidate) => candidate.UUID === uuid,
+    );
+
+    if (!accessory) {
+      return;
+    }
+
+    this.api.unregisterPlatformAccessories(
+      'homebridge-eg4',
+      'EG4',
+      [accessory],
+    );
+
+    const index = this.accessories.indexOf(accessory);
+    if (index >= 0) {
+      this.accessories.splice(index, 1);
+    }
+
+    this.handlers.delete(uuid);
+    this.log.info(
+      `Removed disabled/unavailable EG4 ${role} accessory.`,
+    );
   }
 
   private ensureAccessory(
