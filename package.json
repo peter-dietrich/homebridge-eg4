@@ -1,40 +1,53 @@
 {
   "name": "homebridge-eg4",
-  "version": "0.3.6-dev.3",
-  "description": "Homebridge plugin for EG4 solar and battery systems using the EG4 Monitor cloud API.",
+  "displayName": "Homebridge EG4",
+  "version": "0.4.0",
+  "description": "Read-only Homebridge integration for EG4 solar, battery, GridBOSS, load, and generator status using EG4 Monitor.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "config.schema.json",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.0.0 <23 || >=24.0.0 <25 || >=26.0.0 <27",
     "homebridge": ">=2.0.0"
   },
   "keywords": [
     "homebridge-plugin",
     "supports-hap",
+    "homebridge",
+    "homekit",
     "eg4",
     "solar",
     "battery",
     "inverter",
     "gridboss",
-    "homekit"
+    "generator",
+    "energy"
   ],
+  "author": "Peter Dietrich",
   "license": "MIT",
-  "private": true,
-  "homepage": "https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4#readme",
+  "homepage": "https://github.com/peter-dietrich/homebridge-eg4#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4.git"
+    "url": "git+https://github.com/peter-dietrich/homebridge-eg4.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR-GITHUB-USERNAME/homebridge-eg4/issues"
+    "url": "https://github.com/peter-dietrich/homebridge-eg4/issues"
   },
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
     "discover": "npm run build && node --env-file=.env dist/scripts/discover.js",
     "discover:noenv": "npm run build && node dist/scripts/discover.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
