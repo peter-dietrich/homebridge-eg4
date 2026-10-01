@@ -1,30 +1,81 @@
 # Development Notes
 
-## v0.1 validation checklist
+## Architecture
 
-- [ ] `node --version` is 22+
-- [ ] `npm install` succeeds
-- [ ] `.env` created locally and remains untracked
+`EG4Platform` performs one poll per configured interval and builds shared snapshots. Each snapshot is passed to five presentation handlers:
+
+- Grid
+- Battery
+- Solar
+- Load
+- Generator
+
+Do not create independent polling loops inside accessory handlers.
+
+## Data sources
+
+Current cloud flow uses:
+
+- EG4 login
+- plant list
+- inverter/device configuration list
+- parallel-group details
+- GridBOSS runtime
+- parallel energy information
+
+GridBOSS aggregate runtime data is preferred for whole-system values where available.
+
+## Safety rules
+
+This project is intentionally read-only.
+
+Do not add EG4 configuration/control endpoints without a separate design/security review. HomeKit Outlet writes currently exist only to obtain useful Apple Home tiles; handlers must ignore the requested state and restore observed state without issuing a device/cloud control request.
+
+Never log:
+- passwords
+- cookies
+- authorization/session tokens
+- full unsanitized response bodies
+- full HAR captures
+
+## Release validation
+
+Before publishing:
+
+- [ ] `npm ci` succeeds
 - [ ] `npm run build` succeeds
-- [ ] `npm run discover` authenticates
-- [ ] Correct station is listed
-- [ ] Expected inverter count is listed
-- [ ] GridBOSS is discovered, if present
-- [ ] Runtime values roughly match EG4 Monitor
-- [ ] Battery count/details appear
-- [ ] Sanitized report contains no password or session cookie
-- [ ] Sanitized report manually reviewed before sharing
+- [ ] `npm pack --dry-run` contains only intended public files
+- [ ] package and lockfile versions match
+- [ ] Homebridge starts without plugin errors
+- [ ] EG4 authentication succeeds
+- [ ] expected inverter count and GridBOSS are discovered
+- [ ] Battery SOC roughly matches EG4 Monitor
+- [ ] PV/load/grid values roughly match EG4 Monitor
+- [ ] Grid switches between connected/off-grid correctly
+- [ ] Generator remains OFF when no generator input is present
+- [ ] tile taps do not cause any EG4 equipment change
+- [ ] debug logs contain no credentials/session material
+- [ ] discovery report is manually reviewed before sharing
+- [ ] README/config schema match the shipping behavior
 
-## First data questions for v0.2
+## Compatibility
 
-Once the discovery report is available, inspect:
+Homebridge 2 is ESM-based. Keep imports compatible with `NodeNext` module resolution and import Homebridge/HAP types from `homebridge`.
 
-1. Whether system SOC is duplicated across inverters or independently reported.
-2. Which inverter owns/reports each battery bank.
-3. Whether GridBOSS load is a better whole-house load source than inverter `pToUser`.
-4. Whether grid import/export is best read from inverter runtime or GridBOSS.
-5. Which fields remain stable across refreshes.
-6. Whether `deviceTypeText4APP` identifies 18KPV reliably.
-7. Whether battery module arrays contain unique stable IDs.
+Homebridge supports current even-numbered Node.js LTS lines. CI covers Node.js 22, 24, and 26 for this release candidate.
 
-No write/control endpoints should be implemented before the read-only model is stable.
+## Apple Home notes
+
+Apple Home controls presentation. Custom characteristics may be available over HAP but not rendered by Apple's Home app.
+
+Do not represent watts/kWh as unrelated native characteristics (temperature, humidity, motion, etc.) merely to force them into the Apple UI.
+
+## Testing new EG4 topologies
+
+When receiving diagnostics from another user:
+
+1. Ask for the output of the built-in discovery tool, not a HAR capture.
+2. Require manual review of the sanitized file before sharing.
+3. Treat unknown device types conservatively.
+4. Avoid hard-coded user serial numbers or plant IDs.
+5. Add new topology support without weakening the official-host credential restriction.
