@@ -46,7 +46,6 @@
     "build": "npm run clean && tsc",
     "discover": "npm run build && node --env-file=.env dist/scripts/discover.js",
     "discover:noenv": "npm run build && node dist/scripts/discover.js",
-    "prepublishOnly": "npm run build",
     "prepack": "npm run build"
   },
   "devDependencies": {
