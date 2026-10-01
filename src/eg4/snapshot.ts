@@ -2,6 +2,7 @@ import { EG4Client } from './client.js';
 import {
   EG4Device,
   EG4EnergyInfo,
+  EG4InverterRuntime,
   EG4MidboxRuntime,
   EG4NormalizedMetrics,
   EG4ParallelDevice,
@@ -122,6 +123,7 @@ function pvPowerFromParallel(
 function buildNormalizedMetrics(
   parallel: EG4ParallelGroupResponse | null,
   midbox: EG4MidboxRuntime | null,
+  inverterRuntime: EG4InverterRuntime | null,
 ): EG4NormalizedMetrics {
   const parallelDevices = parallel?.devices ?? [];
   const system = midbox?.deviceData;
@@ -130,7 +132,10 @@ function buildNormalizedMetrics(
   const parallelSoc = averageDefined(
     parallelDevices.map((device) => numeric(device.soc)),
   );
-  const soc = numeric(system?.soc) ?? parallelSoc;
+  const soc =
+    numeric(system?.soc) ??
+    parallelSoc ??
+    numeric(inverterRuntime?.soc);
 
   const parallelCharge = sumDefined(
     parallelDevices.map((device) => numeric(device.pCharge)),
@@ -138,21 +143,30 @@ function buildNormalizedMetrics(
   const parallelDischarge = sumDefined(
     parallelDevices.map((device) => numeric(device.pDisCharge)),
   );
-  const aggregateBatteryPower = numeric(system?.batPower);
+  const aggregateBatteryPower =
+    numeric(system?.batPower) ??
+    numeric(inverterRuntime?.batPower);
+
+  const directCharge = numeric(inverterRuntime?.pCharge);
+  const directDischarge = numeric(inverterRuntime?.pDisCharge);
 
   const chargePower =
     parallelCharge !== undefined || parallelDischarge !== undefined
       ? Math.max(0, parallelCharge ?? 0)
-      : aggregateBatteryPower !== undefined && aggregateBatteryPower > 0
-        ? aggregateBatteryPower
-        : undefined;
+      : directCharge !== undefined || directDischarge !== undefined
+        ? Math.max(0, directCharge ?? 0)
+        : aggregateBatteryPower !== undefined && aggregateBatteryPower > 0
+          ? aggregateBatteryPower
+          : undefined;
 
   const dischargePower =
     parallelCharge !== undefined || parallelDischarge !== undefined
       ? Math.max(0, parallelDischarge ?? 0)
-      : aggregateBatteryPower !== undefined && aggregateBatteryPower < 0
-        ? Math.abs(aggregateBatteryPower)
-        : undefined;
+      : directCharge !== undefined || directDischarge !== undefined
+        ? Math.max(0, directDischarge ?? 0)
+        : aggregateBatteryPower !== undefined && aggregateBatteryPower < 0
+          ? Math.abs(aggregateBatteryPower)
+          : undefined;
 
   const parallelVoltage = averageDefined(
     parallelDevices.map((device) => {
@@ -161,27 +175,54 @@ function buildNormalizedMetrics(
     }),
   );
   const systemVoltageRaw = numeric(system?.vBat);
+  const directVoltageRaw = numeric(inverterRuntime?.vBat);
   const batteryVoltage =
     systemVoltageRaw !== undefined
       ? systemVoltageRaw / 10
-      : parallelVoltage;
+      : parallelVoltage ??
+        (directVoltageRaw === undefined ? undefined : directVoltageRaw / 10);
+
+  const directSolar =
+    numeric(inverterRuntime?.ppv) ??
+    sumDefined([
+      numeric(inverterRuntime?.ppv1),
+      numeric(inverterRuntime?.ppv2),
+      numeric(inverterRuntime?.ppv3),
+    ]);
 
   const solarPower =
-    numeric(system?.ppv) ?? pvPowerFromParallel(parallelDevices);
+    numeric(system?.ppv) ??
+    pvPowerFromParallel(parallelDevices) ??
+    directSolar;
 
   const backupLoad =
     numeric(system?.peps) ??
-    sumDefined(parallelDevices.map((device) => numeric(device.peps)));
-  const nonBackupLoad = numeric(system?.pLoad);
+    sumDefined(parallelDevices.map((device) => numeric(device.peps))) ??
+    numeric(inverterRuntime?.peps);
+  const nonBackupLoad =
+    numeric(system?.pLoad) ??
+    numeric(inverterRuntime?.pLoad) ??
+    numeric(inverterRuntime?.pload170);
   const loadPower =
     backupLoad !== undefined || nonBackupLoad !== undefined
       ? Math.max(0, (backupLoad ?? 0) + (nonBackupLoad ?? 0))
       : undefined;
 
-  const gridVoltageRaw = numeric(midboxData?.gridRmsVolt);
+  const gridVoltageRaw =
+    numeric(midboxData?.gridRmsVolt) ??
+    numeric(inverterRuntime?.vacr);
   const gridVoltage =
     gridVoltageRaw === undefined ? undefined : gridVoltageRaw / 10;
-  const gridPower = numeric(system?.gridPower);
+
+  const directImport = numeric(inverterRuntime?.pToUser);
+  const directExport = numeric(inverterRuntime?.pToGrid);
+  const directGridPower =
+    directImport !== undefined || directExport !== undefined
+      ? (directImport ?? 0) - (directExport ?? 0)
+      : undefined;
+  const gridPower =
+    numeric(system?.gridPower) ??
+    directGridPower;
 
   const genVoltageRaw = numeric(midboxData?.genRmsVolt);
   const generatorVoltage =
@@ -205,7 +246,7 @@ function buildNormalizedMetrics(
         (sum, value) => sum + Math.abs(value ?? 0),
         0,
       )
-    : undefined;
+    : numeric(inverterRuntime?.genPower);
 
   const generatorAvailable =
     generatorVoltage !== undefined ||
@@ -219,6 +260,8 @@ function buildNormalizedMetrics(
         aggregateBatteryPower !== undefined ||
         parallelCharge !== undefined ||
         parallelDischarge !== undefined ||
+        directCharge !== undefined ||
+        directDischarge !== undefined ||
         batteryVoltage !== undefined,
       soc:
         soc === undefined
@@ -314,7 +357,18 @@ export async function getSystemSnapshots(
         )
       : null;
 
-    const energy = await safeCall<EG4EnergyInfo>(
+    const inverterRuntime = !gridBoss?.serialNum
+      ? await safeCall<EG4InverterRuntime>(
+          'Direct inverter runtime',
+          () =>
+            client.getInverterRuntime(
+              primaryInverter.serialNum as string,
+            ),
+          log,
+        )
+      : null;
+
+    const parallelEnergy = await safeCall<EG4EnergyInfo>(
       'Parallel energy',
       () =>
         client.getParallelEnergyInfo(
@@ -323,6 +377,17 @@ export async function getSystemSnapshots(
       log,
     );
 
+    const energy =
+      parallelEnergy ??
+      await safeCall<EG4EnergyInfo>(
+        'Direct inverter energy',
+        () =>
+          client.getInverterEnergyInfo(
+            primaryInverter.serialNum as string,
+          ),
+        log,
+      );
+
     snapshots.push({
       plant,
       devices,
@@ -330,8 +395,13 @@ export async function getSystemSnapshots(
       gridBoss,
       parallel,
       midbox,
+      inverterRuntime,
       energy,
-      metrics: buildNormalizedMetrics(parallel, midbox),
+      metrics: buildNormalizedMetrics(
+        parallel,
+        midbox,
+        inverterRuntime,
+      ),
     });
   }
 
