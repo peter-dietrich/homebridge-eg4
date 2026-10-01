@@ -2,7 +2,7 @@
 
 Unofficial, read-only Homebridge plugin for EG4 solar, battery, grid, load, and generator status using an EG4 Monitor-compatible interface.
 
-> **Current published release:** 0.4.1. Development work for broader topology support and improved Homebridge configuration is in progress. This project is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
+> **Current release:** 0.5.0. This project is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
 
 ## What it does
 
