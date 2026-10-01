@@ -201,7 +201,7 @@ function buildNormalizedMetrics(
     (value) => value !== undefined,
   );
   const generatorPower = generatorPowerDefined
-    ? generatorPowerParts.reduce(
+    ? generatorPowerParts.reduce<number>(
         (sum, value) => sum + Math.abs(value ?? 0),
         0,
       )
