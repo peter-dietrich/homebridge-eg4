@@ -41,7 +41,7 @@ Discovery rules:
 - an inverter with no usable parallel-group membership is treated as a standalone logical system
 - one logical system in a plant preserves the historical plant-based HomeKit UUIDs
 - multiple logical systems in one plant receive separate system identities and therefore separate Battery, Grid, Solar, Load, and Generator accessories
-- multi-system accessory names use short system prefixes such as `18K` and `FB21` so Apple Home can distinguish the tiles
+- multi-system accessory names use deterministic short prefixes `A`, `B`, `C`, etc. so Apple Home can distinguish systems without tying labels to a specific inverter model
 - accessories belonging to systems no longer returned by successful discovery are explicitly unregistered
 
 This means a two-inverter parallel installation remains one five-accessory HomeKit system, while two independent inverter systems under the same EG4 Monitor plant can expose two separate five-accessory sets.
