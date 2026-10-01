@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 0.5.0 - Flexible topology and configuration
 
 ### Added
 - Configurable visibility for Battery, Grid, Solar, Load, and Generator HomeKit accessories.
