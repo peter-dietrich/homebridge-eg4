@@ -1,8 +1,14 @@
 node_modules/
 dist/
+coverage/
+.npm/
 .env
 .env.*
 !.env.example
 *.log
+*.har
+*.har.gz
+*.pcap
+*.tgz
 .DS_Store
 eg4-discovery*.json
