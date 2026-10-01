@@ -1,8 +1,8 @@
 {
   "name": "homebridge-eg4",
   "displayName": "Homebridge EG4",
-  "version": "0.5.0",
-  "description": "Read-only Homebridge integration for EG4 solar, battery, grid, load, and generator status with flexible topology support.",
+  "version": "0.6.0",
+  "description": "Read-only Homebridge integration for EG4 solar, battery, grid, load, and generator status with multi-system and direct-inverter telemetry support.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
