@@ -195,18 +195,44 @@ function buildNormalizedMetrics(
     pvPowerFromParallel(parallelDevices) ??
     directSolar;
 
-  const backupLoad =
-    numeric(system?.peps) ??
-    sumDefined(parallelDevices.map((device) => numeric(device.peps))) ??
-    numeric(inverterRuntime?.peps);
-  const nonBackupLoad =
-    numeric(system?.pLoad) ??
+  const directImport = numeric(inverterRuntime?.pToUser);
+  const directExport = numeric(inverterRuntime?.pToGrid);
+
+  const systemBackupLoad = numeric(system?.peps);
+  const systemNonBackupLoad = numeric(system?.pLoad);
+  const parallelBackupLoad = sumDefined(
+    parallelDevices.map((device) => numeric(device.peps)),
+  );
+  const directEpsLoad = numeric(inverterRuntime?.peps);
+  const directNonBackupLoad =
     numeric(inverterRuntime?.pLoad) ??
     numeric(inverterRuntime?.pload170);
-  const loadPower =
-    backupLoad !== undefined || nonBackupLoad !== undefined
-      ? Math.max(0, (backupLoad ?? 0) + (nonBackupLoad ?? 0))
+
+  const directDerivedLoad =
+    inverterRuntime &&
+    (directImport !== undefined ||
+      directExport !== undefined ||
+      solarPower !== undefined ||
+      chargePower !== undefined ||
+      dischargePower !== undefined)
+      ? Math.max(
+          0,
+          (directImport ?? 0) +
+            (solarPower ?? 0) +
+            (dischargePower ?? 0) -
+            (directExport ?? 0) -
+            (chargePower ?? 0),
+        )
       : undefined;
+
+  const loadPower =
+    systemBackupLoad !== undefined || systemNonBackupLoad !== undefined
+      ? Math.max(0, (systemBackupLoad ?? 0) + (systemNonBackupLoad ?? 0))
+      : parallelBackupLoad !== undefined
+        ? Math.max(0, parallelBackupLoad)
+        : directNonBackupLoad !== undefined
+          ? Math.max(0, (directEpsLoad ?? 0) + directNonBackupLoad)
+          : directDerivedLoad ?? directEpsLoad;
 
   const gridVoltageRaw =
     numeric(midboxData?.gridRmsVolt) ??
@@ -214,8 +240,6 @@ function buildNormalizedMetrics(
   const gridVoltage =
     gridVoltageRaw === undefined ? undefined : gridVoltageRaw / 10;
 
-  const directImport = numeric(inverterRuntime?.pToUser);
-  const directExport = numeric(inverterRuntime?.pToGrid);
   const directGridPower =
     directImport !== undefined || directExport !== undefined
       ? (directImport ?? 0) - (directExport ?? 0)
@@ -303,7 +327,7 @@ export async function getSystemSnapshots(
   client: EG4Client,
   log: (message: string) => void = () => undefined,
 ): Promise<EG4SystemSnapshot[]> {
-  const login = await client.login();
+  const login = await client.initializeSession();
   const plantResponse = await client.getPlants();
   const plants = plantResponse.rows?.length
     ? plantResponse.rows
