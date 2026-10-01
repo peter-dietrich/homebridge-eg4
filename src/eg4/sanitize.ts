@@ -11,6 +11,16 @@ const PRIVATE_KEYS = [
   'lat',
   'lon',
   'lng',
+  'cookie',
+  'authorization',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'session',
+  'sessionid',
+  'jsessionid',
+  'secret',
+  'plantname',
 ];
 
 const SERIAL_KEYS = [
@@ -19,6 +29,8 @@ const SERIAL_KEYS = [
   'serialnumber',
   'deviceid',
   'plantid',
+  'datalog',
+  'mac',
 ];
 
 function maskIdentifier(value: unknown): unknown {
