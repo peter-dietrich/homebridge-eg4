@@ -6,6 +6,7 @@ export interface EG4ClientOptions {
   baseUrl?: string;
   allowCustomEndpoint?: boolean;
   allowInsecureLocalEndpoint?: boolean;
+  demoMode?: boolean;
   debug?: (message: string) => void;
 }
 
