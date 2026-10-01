@@ -9,7 +9,8 @@
  * This script:
  * - establishes the public EG4 demo/guest session
  * - enumerates visible demo plants/devices
- * - probes read-only topology/runtime/energy endpoints
+ * - probes read-only topology/runtime/energy/battery endpoints
+ * - inventories which demo endpoints return usable telemetry
  * - prints a sanitized compatibility report
  *
  * It does not send EG4 control commands and is excluded from npm publication.
@@ -137,8 +138,89 @@ function selectPrimary(devices) {
   );
 }
 
+const TELEMETRY_KEYS = new Set([
+  'soc',
+  'vBat',
+  'batPower',
+  'batteryPower',
+  'pCharge',
+  'pDisCharge',
+  'ppv',
+  'ppv1',
+  'ppv2',
+  'ppv3',
+  'ppv4',
+  'ppv5',
+  'ppv6',
+  'ppv7',
+  'ppv8',
+  'vpv1',
+  'vpv2',
+  'vpv3',
+  'vpv4',
+  'vpv5',
+  'vpv6',
+  'vpv7',
+  'vpv8',
+  'pac',
+  'peps',
+  'pinv',
+  'prec',
+  'pLoad',
+  'pload170',
+  'pToGrid',
+  'pToUser',
+  'gridPower',
+  'vacr',
+  'fac',
+  'acCouplePower',
+  'genPower',
+]);
+
 function numberOrUndefined(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function summarizePayload(value, depth = 0) {
+  if (!value || typeof value !== 'object') {
+    return {
+      kind: Array.isArray(value) ? 'array' : typeof value,
+      telemetry: {},
+      keys: [],
+    };
+  }
+
+  const telemetry = {};
+  const keys = Array.isArray(value) ? [] : Object.keys(value).slice(0, 60);
+
+  function visit(node, level) {
+    if (!node || typeof node !== 'object' || level > 3) return;
+
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 10)) visit(item, level + 1);
+      return;
+    }
+
+    for (const [key, child] of Object.entries(node)) {
+      if (TELEMETRY_KEYS.has(key) && (typeof child === 'number' || typeof child === 'string')) {
+        if (!(key in telemetry)) telemetry[key] = child;
+      }
+
+      if (child && typeof child === 'object') {
+        visit(child, level + 1);
+      }
+    }
+  }
+
+  visit(value, depth);
+
+  return {
+    kind: Array.isArray(value) ? 'array' : 'object',
+    success: typeof value.success === 'boolean' ? value.success : undefined,
+    keys,
+    telemetry,
+    telemetryFields: Object.keys(telemetry),
+  };
 }
 
 function sumDefined(values) {
@@ -261,6 +343,13 @@ async function main() {
     let midbox = null;
     let energy = null;
 
+    const overviewList = await safe('inverter overview list', () => postForm(
+      '/WManage/api/inverterOverview/list',
+      { plantId: String(plantId) },
+    ));
+
+    const directDeviceProbes = [];
+
     if (primary?.serialNum) {
       parallel = await safe('parallel', () => postForm(
         '/WManage/api/inverterOverview/getParallelGroupDetails',
@@ -271,6 +360,39 @@ async function main() {
         '/WManage/api/inverter/getInverterEnergyInfoParallel',
         { serialNum: String(primary.serialNum) },
       ));
+    }
+
+    for (const device of devices) {
+      if (!device?.serialNum || !looksLikeInverter(device)) continue;
+
+      const serialNum = String(device.serialNum);
+      const runtime = await safe('inverter runtime', () => postForm(
+        '/WManage/api/inverter/getInverterRuntime',
+        { serialNum },
+      ));
+      const directEnergy = await safe('inverter energy', () => postForm(
+        '/WManage/api/inverter/getInverterEnergyInfo',
+        { serialNum },
+      ));
+      const battery = await safe('battery info', () => postForm(
+        '/WManage/api/battery/getBatteryInfo',
+        { serialNum },
+      ));
+
+      directDeviceProbes.push({
+        serial: mask(serialNum),
+        deviceType: device.deviceType,
+        deviceTypeText: deviceText(device),
+        runtime: runtime?._probeError
+          ? { error: runtime._probeError }
+          : summarizePayload(runtime),
+        energy: directEnergy?._probeError
+          ? { error: directEnergy._probeError }
+          : summarizePayload(directEnergy),
+        battery: battery?._probeError
+          ? { error: battery._probeError }
+          : summarizePayload(battery),
+      });
     }
 
     const midboxSerial = gridBoss?.serialNum ?? parallel?.parallelMidboxSn;
@@ -300,6 +422,12 @@ async function main() {
         deviceTypeText: deviceText(primary),
       } : null,
       gridBossDetected: Boolean(gridBoss || parallel?.parallelMidboxSn),
+      endpointInventory: {
+        inverterOverviewList: overviewList?._probeError
+          ? { error: overviewList._probeError }
+          : summarizePayload(overviewList),
+        directDeviceProbes,
+      },
       parallel: parallel?._probeError ? { error: parallel._probeError } : {
         deviceType: parallel?.deviceType,
         inverterCount: parallel?.inverterCount ?? parallel?.total,
@@ -323,6 +451,7 @@ async function main() {
         hasRuntimeData: energy?.hasRuntimeData,
         availableFields: Object.keys(energy ?? {})
           .filter((k) => !['success'].includes(k) && energy?.[k] !== undefined),
+        summary: summarizePayload(energy ?? {}),
       },
       normalizedMetrics: normalize(
         parallel?._probeError ? null : parallel,
