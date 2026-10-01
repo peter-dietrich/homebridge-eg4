@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### Added
+- Configurable visibility for Battery, Grid, Solar, Load, and Generator HomeKit accessories.
+- `show-na` and `hide` behavior for selected accessories when telemetry is unavailable.
+- Normalized telemetry/capability layer with inverter fallbacks when GridBOSS aggregate data is unavailable.
+- Broader primary inverter/device discovery instead of requiring an exact `18kpv` device label.
+- Grouped Homebridge settings UI with Account, Apple Home Accessories, and Advanced Endpoint sections.
+- Explicit custom-endpoint support for trusted EG4-compatible servers.
+- Optional local/private HTTP endpoint support behind a separate security opt-in.
+
+### Changed
+- `OFF` / `OFF-GRID` now represent known inactive states; `N/A` represents unavailable telemetry.
+- GridBOSS remains the preferred whole-system telemetry source, with inverter/parallel fallback where supported.
+- Disabling an accessory unregisters its cached HomeKit accessory after a successful refresh.
+- Custom base paths are preserved and the HTTP Origin header is derived from the endpoint origin.
+
+### Security
+- The official EG4 Monitor endpoint remains the default.
+- Non-official hosts require `allowCustomEndpoint: true`.
+- Plain HTTP is permitted only when explicitly enabled and only for localhost, `.local`, or private RFC1918 addresses.
+- URL-embedded credentials, query strings, and fragments are stripped before API use.
+
 ## 0.4.1 - Homebridge verification fixes
 
 ### Fixed

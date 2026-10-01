@@ -14,23 +14,45 @@ Repository: https://github.com/peter-dietrich/homebridge-eg4
 
 ## Credential handling
 
-The plugin requires an EG4 Monitor username and password because the EG4 web interface uses account authentication.
+The plugin requires an EG4-compatible username and password because the monitored web interface uses account authentication.
 
-The production client:
+By default the production client connects only to:
 
-- requires HTTPS
-- restricts authentication to the approved EG4 Monitor host
+```text
+https://monitor.eg4electronics.com
+```
+
+The client:
+
 - keeps session cookies in memory only
 - does not intentionally log passwords, cookies, authorization tokens, or response bodies
 - contains no analytics, advertising, or usage-tracking integration
+- strips credentials embedded in endpoint URLs
+- strips URL query strings and fragments before API use
 
 Homebridge itself stores plugin configuration. Protect the Homebridge host, configuration directory, backups, and administrative UI accordingly.
 
+## Custom endpoints
+
+Custom EG4-compatible endpoints are supported only through explicit opt-in.
+
+Security rules are enforced by runtime code:
+
+- a non-official hostname requires `allowCustomEndpoint: true`
+- Internet-hosted custom endpoints must use HTTPS
+- plain HTTP additionally requires `allowInsecureLocalEndpoint: true`
+- plain HTTP is restricted to localhost, `.local`, or RFC1918 private-network addresses
+- the official EG4 Monitor hostname remains restricted to HTTPS on the standard port
+
+When a custom endpoint is enabled, the configured username and password are intentionally sent to that endpoint for authentication. Only configure servers you trust.
+
+Local HTTP protects against accidental Internet transmission but does **not** encrypt traffic on the local network. HTTPS remains preferred whenever available.
+
 ## Diagnostic data
 
-The optional discovery tool applies redaction to common personal information, account fields, tokens, location data, plant/device identifiers, and datalogger identifiers.
+Runtime debug logging is designed to report endpoint-level failures without response bodies or authentication material.
 
-Redaction is defense in depth, not a guarantee that an undocumented API can never add a new sensitive field. Always inspect a diagnostic file manually before sharing it.
+Do not post raw HAR files, session headers, cookies, Homebridge configuration, or unreviewed API data in public issues.
 
 ## Scope
 
@@ -39,6 +61,7 @@ Security issues include, but are not limited to:
 - credential disclosure
 - session/token disclosure
 - sending credentials to an unintended host
+- bypassing custom-endpoint opt-in restrictions
 - command/control behavior reaching EG4 equipment
 - unsafe logging
 - dependency or build-chain vulnerabilities that materially affect plugin users

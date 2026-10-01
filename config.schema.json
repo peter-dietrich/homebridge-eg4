@@ -2,23 +2,26 @@
   "pluginAlias": "EG4",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Read-only EG4 Monitor integration for Battery, Grid, Solar, Load, and Generator status.",
-  "footerDisplay": "Unofficial community plugin. Not affiliated with EG4 Electronics or Luxpower. Credentials are sent only to the approved EG4 Monitor HTTPS host.",
+  "headerDisplay": "### Homebridge EG4\nRead-only monitoring for EG4 solar and storage systems. Choose which Apple Home accessories you want to expose, even when a subsystem is currently inactive.",
+  "footerDisplay": "**Security:** The official EG4 Monitor endpoint is used by default. Custom endpoints require explicit opt-in. Plain HTTP is permitted only for explicitly enabled private/loopback hosts. This plugin does not send EG4 control commands.",
   "schema": {
     "type": "object",
     "properties": {
       "name": {
-        "title": "Name",
+        "title": "Platform Name",
         "type": "string",
-        "default": "EG4 Energy"
+        "default": "EG4 Energy",
+        "description": "Display name for this Homebridge platform."
       },
       "username": {
         "title": "EG4 Monitor Username",
-        "type": "string"
+        "type": "string",
+        "description": "Username for the EG4 Monitor account used for read-only monitoring."
       },
       "password": {
         "title": "EG4 Monitor Password",
         "type": "string",
+        "description": "Password for the EG4 Monitor account.",
         "x-schema-form": {
           "type": "password"
         }
@@ -28,7 +31,19 @@
         "type": "string",
         "format": "url",
         "default": "https://monitor.eg4electronics.com",
-        "description": "For security, the current release accepts only the official EG4 Monitor HTTPS host."
+        "description": "Official EG4 Monitor URL by default. Custom HTTPS endpoints require the option below."
+      },
+      "allowCustomEndpoint": {
+        "title": "Allow a custom EG4-compatible endpoint",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable only when using another trusted EG4-compatible server, such as an EG4 demo/test site or a locally hosted compatible endpoint."
+      },
+      "allowInsecureLocalEndpoint": {
+        "title": "Allow HTTP on a private/local endpoint",
+        "type": "boolean",
+        "default": false,
+        "description": "Advanced. Allows credentials over plain HTTP only to localhost, .local, or RFC1918 private-network addresses. Never enable this for an Internet-hosted server."
       },
       "pollInterval": {
         "title": "Polling Interval (seconds)",
@@ -36,7 +51,57 @@
         "default": 120,
         "minimum": 60,
         "maximum": 900,
-        "description": "How often Homebridge refreshes EG4 cloud data. Minimum 60 seconds."
+        "description": "How often Homebridge refreshes EG4 data. Minimum 60 seconds."
+      },
+      "showBattery": {
+        "title": "Show Battery",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose battery state-of-charge, charging/discharging status, power, and energy data when available."
+      },
+      "showGrid": {
+        "title": "Show Grid",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose utility-grid availability and power data when available."
+      },
+      "showSolar": {
+        "title": "Show Solar",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose current solar production and energy totals when available."
+      },
+      "showLoad": {
+        "title": "Show House Load",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose whole-home/load power and energy usage when available."
+      },
+      "showGenerator": {
+        "title": "Show Generator",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose generator status. With valid generator telemetry, an unconnected or idle generator can remain visible as Gen OFF."
+      },
+      "missingDataBehavior": {
+        "title": "When selected data is unavailable",
+        "type": "string",
+        "default": "show-na",
+        "oneOf": [
+          {
+            "title": "Show the accessory as N/A",
+            "enum": [
+              "show-na"
+            ]
+          },
+          {
+            "title": "Hide the accessory",
+            "enum": [
+              "hide"
+            ]
+          }
+        ],
+        "description": "OFF means the plugin has telemetry and knows the subsystem is inactive. N/A means the selected accessory is visible but this system/API does not provide enough telemetry to determine its state."
       },
       "debugApi": {
         "title": "API Debug Logging",
@@ -52,5 +117,51 @@
       "baseUrl",
       "pollInterval"
     ]
-  }
+  },
+  "layout": [
+    {
+      "type": "fieldset",
+      "title": "EG4 Account & Connection",
+      "description": "Credentials are used only to connect to the configured EG4-compatible endpoint.",
+      "expandable": false,
+      "items": [
+        "name",
+        "username",
+        "password",
+        "pollInterval"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Apple Home Accessories",
+      "description": "Choose the status tiles you want Homebridge to expose. A selected tile may remain visible even when a subsystem is inactive.",
+      "expandable": false,
+      "items": [
+        "showBattery",
+        "showGrid",
+        "showSolar",
+        "showLoad",
+        "showGenerator",
+        "missingDataBehavior"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Endpoint & Advanced Settings",
+      "description": "Most users should leave these settings unchanged.",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        "baseUrl",
+        "allowCustomEndpoint",
+        {
+          "key": "allowInsecureLocalEndpoint",
+          "condition": {
+            "functionBody": "return model.allowCustomEndpoint === true;"
+          }
+        },
+        "debugApi"
+      ]
+    }
+  ]
 }

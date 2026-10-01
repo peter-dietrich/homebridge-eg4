@@ -135,41 +135,15 @@ function addNativeStatusCharacteristics(
 }
 
 function gridVoltage(snapshot: EG4SystemSnapshot): number {
-  const raw = snapshot.midbox?.midboxData?.gridRmsVolt;
-  return typeof raw === 'number' ? raw / 10 : 0;
+  return snapshot.metrics.grid.voltage ?? 0;
 }
 
 function totalHouseLoad(snapshot: EG4SystemSnapshot): number {
-  const system = snapshot.midbox?.deviceData;
-
-  const backup =
-    typeof system?.peps === 'number' ? system.peps : 0;
-
-  const nonBackup =
-    typeof system?.pLoad === 'number' ? system.pLoad : 0;
-
-  return Math.max(0, backup + nonBackup);
+  return Math.max(0, snapshot.metrics.load.power ?? 0);
 }
 
 function systemSoc(snapshot: EG4SystemSnapshot): number {
-  const system = snapshot.midbox?.deviceData;
-
-  if (typeof system?.soc === 'number') {
-    return Math.max(0, Math.min(100, system.soc));
-  }
-
-  const values = (snapshot.parallel?.devices ?? [])
-    .map((device) => device.soc)
-    .filter((value): value is number => typeof value === 'number');
-
-  if (!values.length) {
-    return 0;
-  }
-
-  return Math.round(
-    values.reduce((sum, value) => sum + value, 0) /
-      values.length,
-  );
+  return snapshot.metrics.battery.soc ?? 0;
 }
 
 function numberFromText(value: unknown): number {
@@ -236,70 +210,22 @@ function powerDisplayName(
 function batteryFlows(
   snapshot: EG4SystemSnapshot,
 ): { charge: number; discharge: number } {
-  const devices = snapshot.parallel?.devices ?? [];
-
-  const charge = devices.reduce(
-    (sum, device) =>
-      sum +
-      (typeof device.pCharge === 'number'
-        ? Math.max(0, device.pCharge)
-        : 0),
-    0,
-  );
-
-  const discharge = devices.reduce(
-    (sum, device) =>
-      sum +
-      (typeof device.pDisCharge === 'number'
-        ? Math.max(0, device.pDisCharge)
-        : 0),
-    0,
-  );
-
-  if (charge > 0 || discharge > 0) {
-    return { charge, discharge };
-  }
-
-  const aggregate =
-    typeof snapshot.midbox?.deviceData?.batPower === 'number'
-      ? snapshot.midbox.deviceData.batPower
-      : 0;
-
   return {
-    charge: aggregate > 0 ? aggregate : 0,
-    discharge: aggregate < 0 ? Math.abs(aggregate) : 0,
+    charge: Math.max(0, snapshot.metrics.battery.chargePower ?? 0),
+    discharge: Math.max(0, snapshot.metrics.battery.dischargePower ?? 0),
   };
 }
 
 function generatorVoltage(snapshot: EG4SystemSnapshot): number {
-  const raw = snapshot.midbox?.midboxData?.genRmsVolt;
-  return typeof raw === 'number' ? raw / 10 : 0;
+  return snapshot.metrics.generator.voltage ?? 0;
 }
 
 function generatorFrequency(snapshot: EG4SystemSnapshot): number {
-  const raw = snapshot.midbox?.midboxData?.genFreq;
-
-  if (typeof raw !== 'number') {
-    return 0;
-  }
-
-  return raw > 100 ? raw / 100 : raw;
+  return snapshot.metrics.generator.frequency ?? 0;
 }
 
 function generatorPower(snapshot: EG4SystemSnapshot): number {
-  const data = snapshot.midbox?.midboxData;
-
-  const l1 =
-    typeof data?.genL1ActivePower === 'number'
-      ? data.genL1ActivePower
-      : 0;
-
-  const l2 =
-    typeof data?.genL2ActivePower === 'number'
-      ? data.genL2ActivePower
-      : 0;
-
-  return Math.abs(l1) + Math.abs(l2);
+  return Math.max(0, snapshot.metrics.generator.power ?? 0);
 }
 
 export interface EG4AccessoryHandler {
@@ -389,7 +315,8 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
 
   update(snapshot: EG4SystemSnapshot): void {
     const voltage = gridVoltage(snapshot);
-    this.connected = voltage >= 180;
+    const available = snapshot.metrics.grid.available;
+    this.connected = snapshot.metrics.grid.connected ?? false;
 
     this.service.updateCharacteristic(
       this.platform.Characteristic.On,
@@ -413,14 +340,13 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
 
     this.voltageCharacteristic.updateValue(voltage);
 
-    const gridPower =
-      typeof snapshot.midbox?.deviceData?.gridPower === 'number'
-        ? snapshot.midbox.deviceData.gridPower
-        : 0;
+    const gridPower = snapshot.metrics.grid.power ?? 0;
 
-    const name = this.connected
-      ? `Grid ${compactPower(gridPower)}`
-      : 'Grid OFF-GRID';
+    const name = !available
+      ? 'Grid N/A'
+      : this.connected
+        ? `Grid ${compactPower(gridPower)}`
+        : 'Grid OFF-GRID';
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -433,7 +359,7 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
     }
 
     this.platform.log.info(
-      `[EG4 Grid] ${this.connected ? 'Connected' : 'Off-grid'} ` +
+      `[EG4 Grid] ${!available ? 'Unavailable' : this.connected ? 'Connected' : 'Off-grid'} ` +
         `(${voltage.toFixed(1)}V)`,
     );
   }
@@ -600,24 +526,21 @@ export class EG4BatteryAccessory
   }
 
   update(snapshot: EG4SystemSnapshot): void {
-    const system = snapshot.midbox?.deviceData;
+    const available = snapshot.metrics.battery.available;
 
     this.soc = systemSoc(snapshot);
 
     const batteryPower =
-      typeof system?.batPower === 'number'
-        ? system.batPower
-        : 0;
+      snapshot.metrics.battery.signedPower ??
+      ((snapshot.metrics.battery.chargePower ?? 0) -
+        (snapshot.metrics.battery.dischargePower ?? 0));
 
     const flows = batteryFlows(snapshot);
     this.charging = flows.charge > 50;
     const discharging = flows.discharge > 50;
     const batteryActive = this.charging || discharging;
 
-    const voltage =
-      typeof system?.vBat === 'number'
-        ? system.vBat / 10
-        : 0;
+    const voltage = snapshot.metrics.battery.voltage ?? 0;
 
     this.chargeStateService.updateCharacteristic(
       this.platform.Characteristic.On,
@@ -672,11 +595,13 @@ export class EG4BatteryAccessory
       this.platform.Characteristic.StatusFault.NO_FAULT,
     );
 
-    const name = this.charging
-      ? `Batt ${this.soc}% CHG ${compactPower(flows.charge)}`
-      : discharging
-        ? `Batt ${this.soc}% DIS ${compactPower(flows.discharge)}`
-        : `Batt ${this.soc}% IDLE`;
+    const name = !available
+      ? 'Batt N/A'
+      : this.charging
+        ? `Batt ${this.soc}% CHG ${compactPower(flows.charge)}`
+        : discharging
+          ? `Batt ${this.soc}% DIS ${compactPower(flows.discharge)}`
+          : `Batt ${this.soc}% IDLE`;
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -860,10 +785,8 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
   }
 
   update(snapshot: EG4SystemSnapshot): void {
-    const power =
-      typeof snapshot.midbox?.deviceData?.ppv === 'number'
-        ? snapshot.midbox.deviceData.ppv
-        : 0;
+    const available = snapshot.metrics.solar.available;
+    const power = snapshot.metrics.solar.power ?? 0;
 
     const totalEnergy = numberFromText(
       snapshot.energy?.totalYieldingText,
@@ -874,7 +797,7 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
 
     this.updateValues(power, totalEnergy);
     this.todayEnergyCharacteristic.updateValue(todayEnergy);
-    this.updateDynamicName(power);
+    this.updateDynamicName(power, available);
 
     this.platform.log.info(
       `[EG4 Solar] Power=${power}W ` +
@@ -882,12 +805,13 @@ export class EG4SolarAccessory extends EG4PowerAccessory {
     );
   }
 
-  private updateDynamicName(power: number): void {
-    const name = powerDisplayName(
-      'Solar',
-      power,
-      true,
-    );
+  private updateDynamicName(
+    power: number,
+    available: boolean,
+  ): void {
+    const name = available
+      ? powerDisplayName('Solar', power, true)
+      : 'Solar N/A';
 
     if (name === this.lastAdvertisedName) {
       return;
@@ -935,6 +859,7 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
   }
 
   update(snapshot: EG4SystemSnapshot): void {
+    const available = snapshot.metrics.load.available;
     const power = totalHouseLoad(snapshot);
 
     const totalEnergy = numberFromText(
@@ -947,10 +872,9 @@ export class EG4LoadAccessory extends EG4PowerAccessory {
     this.updateValues(power, totalEnergy);
     this.todayUsageCharacteristic.updateValue(todayUsage);
 
-    const name = powerDisplayName(
-      'Load',
-      power,
-    );
+    const name = available
+      ? powerDisplayName('Load', power)
+      : 'Load N/A';
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -1079,7 +1003,8 @@ export class EG4GeneratorAccessory
     const frequency = generatorFrequency(snapshot);
     const power = generatorPower(snapshot);
 
-    this.active = voltage >= 180 || power > 50;
+    const available = snapshot.metrics.generator.available;
+    this.active = snapshot.metrics.generator.active ?? false;
 
     this.service.updateCharacteristic(
       this.platform.Characteristic.On,
@@ -1105,11 +1030,13 @@ export class EG4GeneratorAccessory
     this.voltageCharacteristic.updateValue(voltage);
     this.frequencyCharacteristic.updateValue(frequency);
 
-    const name = this.active
-      ? power > 50
-        ? `Gen ${compactPower(power)}`
-        : 'Gen ON'
-      : 'Gen OFF';
+    const name = !available
+      ? 'Gen N/A'
+      : this.active
+        ? power > 50
+          ? `Gen ${compactPower(power)}`
+          : 'Gen ON'
+        : 'Gen OFF';
 
     if (name !== this.lastAdvertisedName) {
       this.lastAdvertisedName = name;
@@ -1122,7 +1049,7 @@ export class EG4GeneratorAccessory
     }
 
     this.platform.log.info(
-      `[EG4 Generator] ${this.active ? 'Active' : 'Off'} ` +
+      `[EG4 Generator] ${!available ? 'Unavailable' : this.active ? 'Active' : 'Off'} ` +
         `Power=${power}W Voltage=${voltage.toFixed(1)}V ` +
         `Frequency=${frequency.toFixed(2)}Hz`,
     );
