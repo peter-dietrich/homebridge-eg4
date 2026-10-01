@@ -1,7 +1,7 @@
 {
   "name": "homebridge-eg4",
   "displayName": "Homebridge EG4",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Read-only Homebridge integration for EG4 solar, battery, GridBOSS, load, and generator status using EG4 Monitor.",
   "type": "module",
   "main": "dist/index.js",
@@ -44,8 +44,6 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
-    "discover": "npm run build && node --env-file=.env dist/scripts/discover.js",
-    "discover:noenv": "npm run build && node dist/scripts/discover.js",
     "prepack": "npm run build"
   },
   "devDependencies": {
