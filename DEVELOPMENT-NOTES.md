@@ -30,6 +30,22 @@ Preferred source order:
 
 A metric with `available: false` must not be represented as a known OFF state.
 
+## Logical systems within a plant
+
+An EG4 Monitor plant can contain more than one electrical system. The plugin must not assume that every inverter listed under one plant participates in the same power flow.
+
+Discovery rules:
+
+- inverters reported together by the parallel-group endpoint are treated as one logical electrical system
+- a GridBOSS is associated with the logical system identified by the parallel group's midbox serial
+- an inverter with no usable parallel-group membership is treated as a standalone logical system
+- one logical system in a plant preserves the historical plant-based HomeKit UUIDs
+- multiple logical systems in one plant receive separate system identities and therefore separate Battery, Grid, Solar, Load, and Generator accessories
+- multi-system accessory names use short system prefixes such as `18K` and `FB21` so Apple Home can distinguish the tiles
+- accessories belonging to systems no longer returned by successful discovery are explicitly unregistered
+
+This means a two-inverter parallel installation remains one five-accessory HomeKit system, while two independent inverter systems under the same EG4 Monitor plant can expose two separate five-accessory sets.
+
 ## Accessory lifecycle
 
 Selected accessories are created/updated from the shared snapshot.
