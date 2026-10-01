@@ -283,6 +283,12 @@ export class EG4Client {
       );
     }
 
+    if (parsed.port && parsed.port !== '443') {
+      throw new EG4ApiError(
+        'EG4 Monitor URL must use the standard HTTPS port.',
+      );
+    }
+
     parsed.username = '';
     parsed.password = '';
     parsed.hash = '';
