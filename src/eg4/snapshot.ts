@@ -103,25 +103,6 @@ function labelForDevice(device: EG4Device): string {
   return raw || 'EG4';
 }
 
-function shortLabelForDevice(device: EG4Device): string {
-  const label = labelForDevice(device).toUpperCase();
-
-  if (label.includes('FLEXBOSS21')) {
-    return 'FB21';
-  }
-  if (label.includes('18KPV')) {
-    return '18K';
-  }
-  if (label.includes('12KPV')) {
-    return '12K';
-  }
-  if (label.includes('6000XP')) {
-    return '6KXP';
-  }
-
-  return label.replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'EG4';
-}
-
 async function safeCall<T>(
   label: string,
   fn: () => Promise<T>,
@@ -501,6 +482,10 @@ export async function getSystemSnapshots(
       claimedSerials.add(serial);
     }
 
+    logicalSystems.sort((a, b) =>
+      a.identitySeed.localeCompare(b.identitySeed),
+    );
+
     if (
       logicalSystems.length === 1 &&
       !logicalSystems[0]?.gridBoss &&
@@ -511,7 +496,7 @@ export async function getSystemSnapshots(
 
     const multipleSystemsInPlant = logicalSystems.length > 1;
 
-    for (const logicalSystem of logicalSystems) {
+    for (const [systemIndex, logicalSystem] of logicalSystems.entries()) {
       const primarySerial = serialOf(logicalSystem.primary);
       if (!primarySerial) {
         continue;
@@ -558,7 +543,9 @@ export async function getSystemSnapshots(
         plant,
         systemId,
         systemLabel: labelForDevice(logicalSystem.primary),
-        systemShortLabel: shortLabelForDevice(logicalSystem.primary),
+        systemShortLabel: multipleSystemsInPlant
+          ? String.fromCharCode(65 + systemIndex)
+          : undefined,
         multipleSystemsInPlant,
         devices: logicalSystem.devices,
         primaryInverter: logicalSystem.primary,
