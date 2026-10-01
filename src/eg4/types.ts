@@ -171,4 +171,41 @@ export interface EG4SystemSnapshot {
   parallel: EG4ParallelGroupResponse | null;
   midbox: EG4MidboxRuntime | null;
   energy: EG4EnergyInfo | null;
+  metrics: EG4NormalizedMetrics;
+}
+
+
+export interface EG4BatteryMetrics {
+  available: boolean;
+  soc?: number;
+  chargePower?: number;
+  dischargePower?: number;
+  signedPower?: number;
+  voltage?: number;
+}
+
+export interface EG4GridMetrics {
+  available: boolean;
+  connected?: boolean;
+  power?: number;
+  voltage?: number;
+}
+
+export interface EG4PowerMetrics {
+  available: boolean;
+  power?: number;
+}
+
+export interface EG4GeneratorMetrics extends EG4PowerMetrics {
+  active?: boolean;
+  voltage?: number;
+  frequency?: number;
+}
+
+export interface EG4NormalizedMetrics {
+  battery: EG4BatteryMetrics;
+  grid: EG4GridMetrics;
+  solar: EG4PowerMetrics;
+  load: EG4PowerMetrics;
+  generator: EG4GeneratorMetrics;
 }
