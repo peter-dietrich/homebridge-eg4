@@ -10,18 +10,15 @@
       "name": {
         "title": "Name",
         "type": "string",
-        "default": "EG4 Energy",
-        "required": true
+        "default": "EG4 Energy"
       },
       "username": {
         "title": "EG4 Monitor Username",
-        "type": "string",
-        "required": true
+        "type": "string"
       },
       "password": {
         "title": "EG4 Monitor Password",
         "type": "string",
-        "required": true,
         "x-schema-form": {
           "type": "password"
         }
@@ -31,7 +28,6 @@
         "type": "string",
         "format": "url",
         "default": "https://monitor.eg4electronics.com",
-        "required": true,
         "description": "For security, the current release accepts only the official EG4 Monitor HTTPS host."
       },
       "pollInterval": {
@@ -40,7 +36,6 @@
         "default": 120,
         "minimum": 60,
         "maximum": 900,
-        "required": true,
         "description": "How often Homebridge refreshes EG4 cloud data. Minimum 60 seconds."
       },
       "debugApi": {
@@ -49,6 +44,13 @@
         "default": false,
         "description": "Logs endpoint-level diagnostics without response bodies or credentials. Enable only while troubleshooting."
       }
-    }
+    },
+    "required": [
+      "name",
+      "username",
+      "password",
+      "baseUrl",
+      "pollInterval"
+    ]
   }
 }
