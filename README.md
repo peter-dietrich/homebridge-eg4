@@ -1,203 +1,206 @@
 # homebridge-eg4
 
-**Development status: v0.3.1-dev.1 — split HomeKit accessories / read-only tile experiment**
+Unofficial, read-only Homebridge plugin for EG4 solar, battery, GridBOSS, load, and generator status using the EG4 Monitor cloud interface.
 
-Unofficial Homebridge plugin for EG4 solar and battery systems using the EG4 Monitor cloud interface.
+> **Release candidate:** 0.4.0. The project is being prepared for its first public npm release. It is not affiliated with or endorsed by EG4 Electronics, Luxpower, Apple, or the Homebridge project.
 
-This project is currently under active development and has been tested against an EG4 system with two 18KPV inverters, a GridBOSS, and parallel battery storage.
+## What it does
 
-## Current capabilities
+The plugin logs in to EG4 Monitor with the account you provide, discovers the accessible plant and devices, builds one aggregate system snapshot, and exposes that snapshot to HomeKit through separate logical accessories.
 
-The plugin authenticates to the EG4 Monitor portal and uses the same cloud endpoints that power the EG4 web interface.
+Current HomeKit presentation:
 
-It currently:
+| Accessory | Example tile | Data |
+| --- | --- | --- |
+| Battery | `Batt 93% DIS 420W` | SOC, charging state, low-battery state, charge/discharge power, battery voltage, daily charged/discharged energy |
+| Grid | `Grid OFF-GRID` or `Grid 820W` | Utility presence from GridBOSS RMS voltage, grid power, grid voltage |
+| Solar | `Solar 1.4kW` or `Solar OFF` | Current PV power, today's solar energy, total solar energy |
+| Load | `Load 516W` | Current aggregate house load, today's usage, total usage |
+| Generator | `Gen OFF` or `Gen 4.6kW` | Generator presence, power, voltage, frequency |
 
-- Authenticates to EG4 Monitor with the configured account.
-- Discovers plants and devices from the EG4 configuration device list.
-- Identifies the primary 18KPV inverter and GridBOSS.
-- Reads the parallel inverter topology.
-- Reads aggregate live system data from the GridBOSS runtime endpoint.
-- Reads aggregate energy totals for the parallel inverter group.
-- Polls EG4 at a configurable interval (120 seconds by default).
-- Creates four logical HomeKit accessories from one EG4 system snapshot.
-- Remains fully read-only; it does not send control commands to EG4 equipment.
+Apple Home decides which HomeKit characteristics it renders. Native Battery characteristics are shown particularly well; many custom watt/voltage/kWh characteristics are retained in HAP but may not appear in Apple's Home app.
 
-## HomeKit accessories
+## Tested topology
 
-### EG4 Grid
+Development has been validated on an EG4 installation using:
 
-Quick-glance grid availability.
+- two EG4 18KPV inverters in parallel
+- GridBOSS
+- parallel EG4 battery storage
 
-- Native read-only HomeKit Switch service.
-- **On** = utility/grid voltage is present.
-- **Off** = off-grid / utility voltage is absent.
-- Grid availability is determined from GridBOSS RMS voltage, not instantaneous grid watts.
+Other EG4 topologies may work but should be considered experimental until reported by additional users.
 
-Using voltage matters because grid power may correctly be 0 W while the utility grid is still available.
+## Read-only safety model
 
-### EG4 Battery
+This plugin does **not** use EG4 control endpoints.
 
-Battery state and charging information.
+It does not change inverter settings, battery settings, charge schedules, GridBOSS configuration, generator state, load state, or export behavior.
 
-Native HomeKit data:
+Apple Home currently renders the quick-glance status tiles as Outlet services. The Outlet `On` characteristic is advertised as writable so Apple will render a normal tile, but any HomeKit write request is intercepted locally and the real observed EG4 state is immediately restored. No corresponding write request is sent to EG4 equipment.
 
-- Battery Level / State of Charge (SOC).
-- Charging State.
-- Low Battery status.
+## Security and privacy
 
-Current development tile:
+- EG4 username and password are used only to authenticate directly to the configured EG4 Monitor service.
+- The production client requires HTTPS and currently permits credentials to be sent only to `monitor.eg4electronics.com`.
+- Session cookies are kept in memory only.
+- The plugin contains no analytics, advertising, usage tracking, or third-party telemetry.
+- API diagnostics intentionally avoid logging response bodies, passwords, session cookies, or tokens.
+- The optional discovery tool sanitizes common personal fields and masks device identifiers before writing its report.
+- `.env`, logs, discovery reports, build output, and local package archives are excluded from source control/package publication.
 
-- Native read-only HomeKit Switch service.
-- **On** = battery system is actively charging.
-- **Off** = battery system is not actively charging.
+Homebridge stores plugin configuration, including credentials, according to the security of your Homebridge installation. Protect access to Homebridge UI, its configuration directory, and host operating system.
 
-Additional read-only telemetry:
+See [SECURITY.md](SECURITY.md) for reporting guidance.
 
-- Battery Power (W).
-- Battery Voltage (V).
+## EG4 cloud interface
 
-The native Battery service is retained because it works well with Siri. For example, Siri can answer questions about the battery level of the EG4 Battery accessory.
+The plugin uses the same web endpoints observed in the EG4 Monitor web application, including plant/device discovery, parallel inverter details, GridBOSS runtime data, and aggregate energy information.
 
-### EG4 Solar
+This is an undocumented/private cloud interface. EG4 can change it without notice, which may break the plugin until an update is released.
 
-Quick-glance PV production state.
-
-- Native read-only HomeKit Switch service.
-- **On** = meaningful PV production is present.
-- **Off** = PV production is effectively zero.
-- Current Power (W) is exposed as a custom characteristic.
-- Total Energy (kWh) is exposed as a custom characteristic.
-
-### EG4 House Load
-
-Quick-glance house/load state.
-
-- Native read-only HomeKit Switch service.
-- **On** = meaningful house load is present.
-- **Off** = essentially no house load is present.
-- Current Power (W) is exposed as a custom characteristic.
-- Total Energy (kWh) is exposed as a custom characteristic.
-
-## Why the split accessory model?
-
-Apple Home renders HomeKit service types differently.
-
-Battery, contact, motion, occupancy, and similar sensor services often appear as room-status attributes rather than normal room tiles. Solar watts and whole-home load watts also do not have standard native HomeKit service types.
-
-v0.3 splits the EG4 system into four logical accessories so Apple Home can provide a faster at-a-glance view while still preserving the real EG4 telemetry underneath.
-
-The current v0.3.1 experiment uses native Switch services as **read-only state indicators** to encourage Apple Home to render normal tiles.
-
-These Switch services intentionally do **not** expose write permission. Tapping a tile must not send a command to the inverter, battery system, or GridBOSS.
-
-## Apple Home limitations
-
-Apple Home does not provide standard native characteristics for:
-
-- Solar power in watts.
-- Whole-home load power in watts.
-- Battery charge/discharge power in watts.
-- Grid import/export power in watts.
-
-The plugin therefore uses native HomeKit characteristics where the meaning is accurate and custom read-only characteristics for richer EG4 telemetry.
-
-Apple Home may not display every custom characteristic. Third-party HomeKit applications may expose more of the underlying HAP data.
-
-## EG4 data flow
-
-The current discovery/runtime flow is approximately:
+Approximate flow:
 
 ```text
-EG4 login
-   ↓
-Plant list
-   ↓
-Configuration device list
-   ↓
-Primary 18KPV + GridBOSS discovery
-   ↓
-Parallel group details
-   ↓
-GridBOSS aggregate runtime
-   ↓
-Parallel energy totals
-   ↓
-Single system snapshot
-   ↓
-EG4 Grid / Battery / Solar / House Load
+EG4 Monitor login
+  -> plant list
+  -> device list
+  -> primary inverter + GridBOSS discovery
+  -> parallel inverter details
+  -> GridBOSS aggregate runtime
+  -> parallel energy totals
+  -> one shared system snapshot
+  -> Battery / Grid / Solar / Load / Generator
 ```
 
-All four HomeKit accessories are updated from the same system snapshot. Splitting the HomeKit presentation does not multiply EG4 cloud polling.
+Splitting the HomeKit presentation into five accessories does not create five independent EG4 polling loops.
+
+## Requirements
+
+- Homebridge 2.x
+- Supported Node.js LTS release for Homebridge (currently Node.js 22, 24, or 26)
+- EG4 Monitor account with access to the target installation
+- Internet access from the Homebridge host to EG4 Monitor
+
+The default polling interval is 120 seconds. The minimum is 60 seconds to avoid unnecessarily aggressive cloud polling.
+
+## Installation
+
+After the first npm release, installation will be available through the Homebridge plugin UI by searching for **EG4**, or from a shell with:
+
+```bash
+npm install -g homebridge-eg4
+```
+
+Until the npm release is published, use the GitHub development checkout described under **Development** below.
 
 ## Configuration
 
-Example Homebridge platform configuration:
+The Homebridge settings UI is the recommended configuration method.
+
+Equivalent JSON:
 
 ```json
 {
   "platform": "EG4",
   "name": "EG4 Energy",
-  "username": "YOUR_EG4_USERNAME",
-  "password": "YOUR_EG4_PASSWORD",
+  "username": "YOUR_EG4_MONITOR_USERNAME",
+  "password": "YOUR_EG4_MONITOR_PASSWORD",
   "baseUrl": "https://monitor.eg4electronics.com",
   "pollInterval": 120,
   "debugApi": false
 }
 ```
 
-During development, running the plugin as a Homebridge child bridge is recommended so plugin changes are isolated from other Homebridge plugins.
+### Options
 
-## Local development
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `name` | `EG4 Energy` | Homebridge platform name |
+| `username` | required | EG4 Monitor login |
+| `password` | required | Masked in the Homebridge settings UI |
+| `baseUrl` | official EG4 Monitor URL | HTTPS only; production code currently allows only the official EG4 Monitor host |
+| `pollInterval` | 120 | Seconds; accepted range 60-900 |
+| `debugApi` | false | Logs endpoint-level diagnostics without response bodies or credentials |
 
-Requirements:
+## HomeKit behavior
 
-- Node.js 22 or later.
-- Homebridge 2.x.
-- TypeScript.
-- An EG4 Monitor account with access to the target system.
+### Battery
 
-Install dependencies and build:
+The Battery accessory retains a native HomeKit Battery service so Apple Home and Siri can expose:
+
+- Battery Level / state of charge
+- Charging State
+- Low Battery
+
+The tile name adds power direction and magnitude where available:
+
+- `Batt 93% CHG 1.3kW`
+- `Batt 93% DIS 420W`
+- `Batt 93% IDLE`
+
+### Grid
+
+Grid availability is based on GridBOSS RMS voltage rather than instantaneous grid watts. This matters because grid power can be 0 W while utility voltage is still present.
+
+- below the grid-voltage threshold: `Grid OFF-GRID`
+- grid present: `Grid <power>`
+
+The power value is intentionally shown without an import/export label until EG4 sign semantics have been validated across more systems.
+
+### Solar and Load
+
+Solar and Load use concise dynamic names because Apple Home does not provide native standard characteristics for arbitrary whole-home watts:
+
+- `Solar 1.4kW`
+- `Solar OFF`
+- `Load 516W`
+
+Custom current/total energy characteristics remain available to HomeKit controllers that choose to expose them.
+
+### Generator
+
+Generator status uses GridBOSS generator voltage and phase power where available:
+
+- `Gen OFF`
+- `Gen ON`
+- `Gen 4.6kW`
+
+The generator accessory is status-only and never starts or stops a generator.
+
+## Troubleshooting
+
+If accessories do not update:
+
+1. Confirm the same account can sign in to EG4 Monitor.
+2. Confirm the Homebridge host can reach `https://monitor.eg4electronics.com`.
+3. Check the Homebridge log for `EG4 refresh failed` or discovery warnings.
+4. Temporarily enable `debugApi` for endpoint-level diagnostics.
+5. Disable `debugApi` after troubleshooting.
+
+Do not post passwords, cookies, full HAR captures, unsanitized discovery output, or Homebridge configuration files in a public issue.
+
+## Development
+
+Clone and build:
 
 ```bash
-npm install
-npm run build
-```
-
-Run cloud discovery from a local `.env` file:
-
-```bash
-npm run discover
-```
-
-Example development environment:
-
-```text
-EG4_USERNAME=...
-EG4_PASSWORD=...
-EG4_BASE_URL=https://monitor.eg4electronics.com
-```
-
-Do not commit `.env`, HAR files, cookies, session headers, or other EG4 credentials to GitHub.
-
-## Homebridge development workflow
-
-A convenient development workflow is to keep a normal Git checkout outside Homebridge's plugin directory and link it into Homebridge.
-
-Example checkout:
-
-```bash
-cd ~
-mkdir -p homebridge-dev
-cd homebridge-dev
 git clone https://github.com/peter-dietrich/homebridge-eg4.git
 cd homebridge-eg4
 npm install
 npm run build
 ```
 
-How the development checkout is linked into Homebridge depends on the Homebridge installation. On systems where the Homebridge service owns its plugin directory, a development symlink can be used.
+For local discovery testing:
 
-After each code update:
+```bash
+cp .env.example .env
+# edit .env locally
+npm run discover
+```
+
+Never commit `.env`, HAR captures, cookies, session headers, or unsanitized EG4 API data.
+
+A development Homebridge host can update from GitHub with:
 
 ```bash
 cd ~/homebridge-dev/homebridge-eg4
@@ -206,49 +209,22 @@ npm install
 npm run build
 ```
 
-Then restart Homebridge or the EG4 child bridge.
+Then restart Homebridge or the plugin child bridge.
 
-Because `dist/` is generated locally and normally ignored by Git, **the Homebridge host must run `npm run build` after pulling new TypeScript source**.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [DEVELOPMENT-NOTES.md](DEVELOPMENT-NOTES.md).
 
-## Read-only safety model
+## Publication
 
-The current plugin is intentionally read-only.
+The package is structured for npm/Homebridge discovery:
 
-It does not:
+- package name begins with `homebridge-`
+- includes the required `homebridge-plugin` keyword
+- advertises HAP support
+- contains a Homebridge `config.schema.json`
+- builds as ESM for Homebridge 2
+- npm publication is restricted to an explicit file allowlist
 
-- Change inverter settings.
-- Change battery settings.
-- Start or stop charging.
-- Change GridBOSS configuration.
-- Start a generator.
-- Control loads.
-- Export power.
-- Send switch commands back to EG4 equipment.
-
-Any HomeKit services used for visual presentation are status indicators only.
-
-## Current development notes
-
-### v0.3.1-dev.1
-
-- Split the original single `Dietrich-House` style accessory into:
-  - EG4 Grid
-  - EG4 Battery
-  - EG4 Solar
-  - EG4 House Load
-- Preserve native HomeKit Battery Level and Charging State.
-- Add read-only Switch services for room-tile presentation.
-- Add custom power/energy characteristics for richer telemetry.
-- Remove the legacy single-system accessory automatically.
-- Keep one EG4 polling cycle for all logical accessories.
-
-### Known limitations
-
-- Apple Home decides tile and accessory presentation; Homebridge cannot fully control its UI.
-- Custom power/energy characteristics may not appear in Apple Home.
-- Battery temperature is not yet mapped from a dedicated BMS source.
-- Device support outside the currently tested EG4 topology is still experimental.
-- EG4 Monitor is an undocumented/private cloud interface and may change.
+Publishing to npm is a separate maintainer action and should only be done after a clean build/test of the release candidate.
 
 ## License
 
