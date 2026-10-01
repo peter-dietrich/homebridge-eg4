@@ -233,31 +233,50 @@ function avgDefined(values) {
   return defined.length ? defined.reduce((a, b) => a + b, 0) / defined.length : undefined;
 }
 
-function normalize(parallel, midbox) {
+function normalize(parallel, midbox, inverterRuntime) {
   const devices = parallel?.devices ?? [];
   const system = midbox?.deviceData ?? {};
   const mid = midbox?.midboxData ?? {};
 
   const soc = numberOrUndefined(system.soc) ??
-    avgDefined(devices.map((d) => numberOrUndefined(d.soc)));
+    avgDefined(devices.map((d) => numberOrUndefined(d.soc))) ??
+    numberOrUndefined(inverterRuntime?.soc);
+
+  const directSolar = numberOrUndefined(inverterRuntime?.ppv) ??
+    sumDefined([
+      numberOrUndefined(inverterRuntime?.ppv1),
+      numberOrUndefined(inverterRuntime?.ppv2),
+      numberOrUndefined(inverterRuntime?.ppv3),
+    ]);
 
   const solar = numberOrUndefined(system.ppv) ??
     sumDefined(devices.map((d) => sumDefined([
       numberOrUndefined(d.ppv1),
       numberOrUndefined(d.ppv2),
       numberOrUndefined(d.ppv3),
-    ])));
+    ]))) ??
+    directSolar;
 
   const backupLoad = numberOrUndefined(system.peps) ??
-    sumDefined(devices.map((d) => numberOrUndefined(d.peps)));
-  const nonBackupLoad = numberOrUndefined(system.pLoad);
+    sumDefined(devices.map((d) => numberOrUndefined(d.peps))) ??
+    numberOrUndefined(inverterRuntime?.peps);
+  const nonBackupLoad = numberOrUndefined(system.pLoad) ??
+    numberOrUndefined(inverterRuntime?.pLoad) ??
+    numberOrUndefined(inverterRuntime?.pload170);
   const load = backupLoad !== undefined || nonBackupLoad !== undefined
     ? Math.max(0, (backupLoad ?? 0) + (nonBackupLoad ?? 0))
     : undefined;
 
-  const gridVoltageRaw = numberOrUndefined(mid.gridRmsVolt);
+  const gridVoltageRaw = numberOrUndefined(mid.gridRmsVolt) ??
+    numberOrUndefined(inverterRuntime?.vacr);
   const gridVoltage = gridVoltageRaw === undefined ? undefined : gridVoltageRaw / 10;
-  const gridPower = numberOrUndefined(system.gridPower);
+
+  const directImport = numberOrUndefined(inverterRuntime?.pToUser);
+  const directExport = numberOrUndefined(inverterRuntime?.pToGrid);
+  const directGridPower = directImport !== undefined || directExport !== undefined
+    ? (directImport ?? 0) - (directExport ?? 0)
+    : undefined;
+  const gridPower = numberOrUndefined(system.gridPower) ?? directGridPower;
 
   const genVoltageRaw = numberOrUndefined(mid.genRmsVolt);
   const genVoltage = genVoltageRaw === undefined ? undefined : genVoltageRaw / 10;
@@ -267,15 +286,22 @@ function normalize(parallel, midbox) {
   ];
   const genPower = genPowerParts.some((v) => v !== undefined)
     ? genPowerParts.reduce((sum, v) => sum + Math.abs(v ?? 0), 0)
-    : undefined;
+    : numberOrUndefined(inverterRuntime?.genPower);
+
+  const pCharge = numberOrUndefined(inverterRuntime?.pCharge);
+  const pDisCharge = numberOrUndefined(inverterRuntime?.pDisCharge);
+  const vBatRaw = numberOrUndefined(inverterRuntime?.vBat);
 
   return {
     battery: {
       available: soc !== undefined ||
-        devices.some((d) => numberOrUndefined(d.pCharge) !== undefined ||
-          numberOrUndefined(d.pDisCharge) !== undefined ||
-          numberOrUndefined(d.vBat) !== undefined),
+        pCharge !== undefined ||
+        pDisCharge !== undefined ||
+        vBatRaw !== undefined,
       soc,
+      chargePower: pCharge,
+      dischargePower: pDisCharge,
+      voltage: vBatRaw === undefined ? undefined : vBatRaw / 10,
     },
     solar: { available: solar !== undefined, power: solar },
     load: { available: load !== undefined, power: load },
@@ -349,6 +375,7 @@ async function main() {
     ));
 
     const directDeviceProbes = [];
+    let primaryRuntime = null;
 
     if (primary?.serialNum) {
       parallel = await safe('parallel', () => postForm(
@@ -378,6 +405,10 @@ async function main() {
         '/WManage/api/battery/getBatteryInfo',
         { serialNum },
       ));
+
+      if (primary?.serialNum && serialNum === String(primary.serialNum) && !runtime?._probeError) {
+        primaryRuntime = runtime;
+      }
 
       directDeviceProbes.push({
         serial: mask(serialNum),
@@ -456,6 +487,7 @@ async function main() {
       normalizedMetrics: normalize(
         parallel?._probeError ? null : parallel,
         midbox?._probeError ? null : midbox,
+        primaryRuntime,
       ),
     });
   }
