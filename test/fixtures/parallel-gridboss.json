@@ -1,0 +1,108 @@
+{
+  "login": {
+    "success": true
+  },
+  "plants": {
+    "rows": [
+      {
+        "plantId": "PLANT-PARALLEL",
+        "name": "Parallel Test"
+      }
+    ]
+  },
+  "devices": {
+    "PLANT-PARALLEL": {
+      "rows": [
+        {
+          "serialNum": "INV-A",
+          "deviceType": 6,
+          "deviceTypeText": "18KPV",
+          "masterOrSlave": 1
+        },
+        {
+          "serialNum": "INV-B",
+          "deviceType": 6,
+          "deviceTypeText": "18KPV",
+          "masterOrSlave": 2
+        },
+        {
+          "serialNum": "MIDBOX-A",
+          "deviceType": 9,
+          "deviceTypeText": "Grid Boss"
+        }
+      ]
+    }
+  },
+  "parallel": {
+    "INV-A": {
+      "success": true,
+      "parallelMidboxSn": "MIDBOX-A",
+      "inverterCount": 2,
+      "devices": [
+        {
+          "serialNum": "INV-A",
+          "deviceType": 6,
+          "deviceTypeText": "18KPV",
+          "masterOrSlave": 1,
+          "soc": 85,
+          "vBat": 540,
+          "pCharge": 0,
+          "pDisCharge": 400,
+          "ppv1": 900,
+          "ppv2": 0,
+          "ppv3": 0,
+          "peps": 200
+        },
+        {
+          "serialNum": "INV-B",
+          "deviceType": 6,
+          "deviceTypeText": "18KPV",
+          "masterOrSlave": 2,
+          "soc": 85,
+          "vBat": 540,
+          "pCharge": 0,
+          "pDisCharge": 400,
+          "ppv1": 800,
+          "ppv2": 0,
+          "ppv3": 0,
+          "peps": 205
+        }
+      ]
+    }
+  },
+  "midbox": {
+    "MIDBOX-A": {
+      "success": true,
+      "hasRuntimeData": true,
+      "midboxData": {
+        "gridRmsVolt": 0,
+        "genRmsVolt": 0,
+        "genFreq": 0,
+        "genL1ActivePower": 0,
+        "genL2ActivePower": 0
+      },
+      "deviceData": {
+        "success": true,
+        "soc": 85,
+        "vBat": 540,
+        "batPower": -800,
+        "ppv": 1700,
+        "peps": 405,
+        "pLoad": 0,
+        "gridPower": 0
+      }
+    }
+  },
+  "parallelEnergy": {
+    "INV-A": {
+      "success": true,
+      "hasRuntimeData": true,
+      "todayYieldingText": "4.2",
+      "totalYieldingText": "12000",
+      "todayChargingText": "1.1",
+      "todayDischargingText": "2.3",
+      "todayUsageText": "3.8",
+      "totalUsageText": "9000"
+    }
+  }
+}
