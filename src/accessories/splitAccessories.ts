@@ -308,7 +308,6 @@ export interface EG4AccessoryHandler {
 
 export class EG4GridAccessory implements EG4AccessoryHandler {
   private readonly service: Service;
-  private readonly statusService: Service;
   private readonly voltageCharacteristic: Characteristic;
   private connected = false;
   private lastAdvertisedName = '';
@@ -365,42 +364,27 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
       .getCharacteristic(platform.Characteristic.OutletInUse)
       .onGet(() => this.connected as CharacteristicValue);
 
-    this.statusService =
-      accessory.getService('Grid Status') ??
-      accessory.addService(
-        platform.Service.ContactSensor,
-        'Grid Status',
-        'grid-status',
-      );
+    const legacyGridStatus =
+      accessory.getService('Grid Status');
 
-    this.statusService
-      .getCharacteristic(
-        platform.Characteristic.ContactSensorState,
-      )
-      .onGet(
-        () =>
-          (this.connected
-            ? platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-            : platform.Characteristic.ContactSensorState
-                .CONTACT_NOT_DETECTED) as CharacteristicValue,
-      );
+    if (legacyGridStatus) {
+      accessory.removeService(legacyGridStatus);
+    }
 
     addNativeStatusCharacteristics(
       platform,
-      this.statusService,
+      this.service,
     );
 
     this.voltageCharacteristic = addReadOnlyFloatCharacteristic(
       platform,
-      this.statusService,
+      this.service,
       'Grid Voltage (V)',
       GRID_VOLTAGE_UUID,
       0,
       300,
       0.1,
     );
-
-    this.service.addLinkedService(this.statusService);
   }
 
   update(snapshot: EG4SystemSnapshot): void {
@@ -417,20 +401,12 @@ export class EG4GridAccessory implements EG4AccessoryHandler {
       this.connected,
     );
 
-    this.statusService.updateCharacteristic(
-      this.platform.Characteristic.ContactSensorState,
-      this.connected
-        ? this.platform.Characteristic.ContactSensorState.CONTACT_DETECTED
-        : this.platform.Characteristic.ContactSensorState
-            .CONTACT_NOT_DETECTED,
-    );
-
-    this.statusService.updateCharacteristic(
+    this.service.updateCharacteristic(
       this.platform.Characteristic.StatusActive,
       true,
     );
 
-    this.statusService.updateCharacteristic(
+    this.service.updateCharacteristic(
       this.platform.Characteristic.StatusFault,
       this.platform.Characteristic.StatusFault.NO_FAULT,
     );
