@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a reproducible problem with homebridge-eg4
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve homebridge-eg4. Please remove passwords, cookies, tokens, private API captures, and other sensitive information before posting.
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Example: 0.5.0
+      placeholder: 0.5.0
+    validations:
+      required: true
+
+  - type: input
+    id: homebridge-version
+    attributes:
+      label: Homebridge version
+      placeholder: 2.4.0
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: 24.21.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: topology
+    attributes:
+      label: EG4 system topology
+      description: List inverter model(s), GridBOSS or other midbox if present, batteries, and any relevant parallel configuration. Do not include serial numbers.
+      placeholder: "Example: 2 x 18KPV in parallel, GridBOSS, 3 wall-mount batteries"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest repeatable sequence that triggers the problem.
+      placeholder: |
+        1. Restart Homebridge
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Homebridge logs
+      description: Paste only the relevant lines. Remove usernames, passwords, cookies, tokens, serial numbers, plant IDs, and other sensitive identifiers.
+      render: shell
+
+  - type: dropdown
+    id: endpoint
+    attributes:
+      label: Endpoint type
+      options:
+        - Official EG4 Monitor
+        - Custom HTTPS EG4-compatible endpoint
+        - Private/local HTTP EG4-compatible endpoint
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed credentials, cookies, tokens, serial numbers, plant IDs, and other sensitive data.
+          required: true
+        - label: I understand this plugin is read-only and does not send EG4 control commands.
+          required: true
