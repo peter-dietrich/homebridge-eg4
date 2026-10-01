@@ -115,6 +115,26 @@ The tool intentionally lives outside `src/` and is not included in the npm `file
 
 Use the report to identify additional inverter/topology combinations and telemetry-field differences before changing production compatibility logic. Do not treat public demo telemetry as a substitute for testing on real customer hardware.
 
+### End-to-end Homebridge demo mode
+
+For development only, Homebridge can use the public EG4 guest demo session instead of account credentials. This setting is intentionally omitted from `config.schema.json` and is not a supported end-user option.
+
+Add the following property manually to the EG4 platform configuration:
+
+```json
+"demoMode": true
+```
+
+Alternatively, start Homebridge with:
+
+```bash
+HOMEBRIDGE_EG4_DEMO=1
+```
+
+When enabled, the plugin ignores EG4 account credentials for authentication, establishes the public demo guest session, and runs the normal snapshot/accessory pipeline. This is intended for end-to-end validation from EG4 demo telemetry through Homebridge and Apple Home.
+
+Do not document demo mode as a normal production feature.
+
 ## Testing new EG4 topologies
 
 A useful topology report includes:
