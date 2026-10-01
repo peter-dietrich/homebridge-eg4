@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## 0.4.1 - Homebridge verification fixes
+
+### Fixed
+- Corrected `config.schema.json` to use JSON Schema's object-level `required` array.
+- Catches and logs startup configuration failures instead of allowing rejected startup promises.
+- Excludes development-only discovery/environment tooling from the compiled npm package.
+- Removes discovery commands that read environment files from the published package scripts.
+
+### Security
+- Keeps the installed Homebridge runtime limited to its configured Homebridge settings and EG4 cloud connection.
+- Reduces automated-review surface by excluding diagnostic report tooling from the release build.
+
 ## 0.4.0 - Release candidate
 
 ### Added
