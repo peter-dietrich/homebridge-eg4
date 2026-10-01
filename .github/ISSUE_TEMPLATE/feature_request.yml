@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest an improvement or broader EG4 compatibility
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please do not include passwords, cookies, tokens, serial numbers, plant IDs, or other sensitive information.
+
+  - type: textarea
+    id: request
+    attributes:
+      label: What would you like to see?
+      description: Describe the feature or compatibility improvement.
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Why is this useful?
+      description: Explain the Homebridge, Apple Home, or EG4 use case this would solve.
+    validations:
+      required: true
+
+  - type: textarea
+    id: topology
+    attributes:
+      label: Relevant EG4 topology or hardware
+      description: If applicable, list inverter model(s), GridBOSS or other midbox, batteries, or other relevant equipment. Do not include serial numbers.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Request area
+      options:
+        - Homebridge settings/UI
+        - Apple Home accessory presentation
+        - Additional read-only telemetry
+        - Additional EG4 topology/model compatibility
+        - Documentation
+        - Developer tooling
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Project scope
+      options:
+        - label: I understand homebridge-eg4 is intentionally read-only and this request does not require sending equipment-control commands.
+          required: true
