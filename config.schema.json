@@ -2,8 +2,8 @@
   "pluginAlias": "EG4",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "EG4 cloud integration. v0.2 creates a read-only HomeKit system battery accessory and logs live system power data.",
-  "footerDisplay": "Unofficial community plugin. Not affiliated with EG4 Electronics or Luxpower.",
+  "headerDisplay": "Read-only EG4 Monitor integration for Battery, Grid, Solar, Load, and Generator status.",
+  "footerDisplay": "Unofficial community plugin. Not affiliated with EG4 Electronics or Luxpower. Credentials are sent only to the approved EG4 Monitor HTTPS host.",
   "schema": {
     "type": "object",
     "properties": {
@@ -21,18 +21,18 @@
       "password": {
         "title": "EG4 Monitor Password",
         "type": "string",
-        "required": true
+        "required": true,
+        "x-schema-form": {
+          "type": "password"
+        }
       },
       "baseUrl": {
         "title": "EG4 Monitor URL",
         "type": "string",
+        "format": "url",
         "default": "https://monitor.eg4electronics.com",
-        "required": true
-      },
-      "debugApi": {
-        "title": "API Debug Logging",
-        "type": "boolean",
-        "default": false
+        "required": true,
+        "description": "For security, the current release accepts only the official EG4 Monitor HTTPS host."
       },
       "pollInterval": {
         "title": "Polling Interval (seconds)",
@@ -40,7 +40,14 @@
         "default": 120,
         "minimum": 60,
         "maximum": 900,
-        "required": true
+        "required": true,
+        "description": "How often Homebridge refreshes EG4 cloud data. Minimum 60 seconds."
+      },
+      "debugApi": {
+        "title": "API Debug Logging",
+        "type": "boolean",
+        "default": false,
+        "description": "Logs endpoint-level diagnostics without response bodies or credentials. Enable only while troubleshooting."
       }
     }
   }
